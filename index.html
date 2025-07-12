@@ -1,0 +1,1384 @@
+<!DOCTYPE html>
+<html lang="id">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Aplikasi Iuran Badminton</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chart.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Font Awesome for Icons -->
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css"
+    />
+    <style>
+      /* Custom styles for Inter font and general body */
+      body {
+        font-family: "Inter", sans-serif;
+        background-color: #f8fafc; /* Sangat terang, untuk dasar yang super bersih */
+        display: flex;
+        flex-direction: column;
+        min-height: 100vh;
+      }
+      /* Pastikan konten utama mengambil ruang yang tersedia di atas navigasi */
+      main {
+        flex-grow: 1;
+        padding-bottom: 70px; /* Ruang untuk navigasi bawah yang tetap */
+      }
+      /* Gaya tab aktif */
+      .tab-button.active {
+        color: #007bff; /* Biru cerah untuk tab aktif - nuansa sporty */
+      }
+      .tab-button.active svg {
+        fill: #007bff; /* Mengisi ikon dengan warna biru cerah */
+        color: #007bff; /* Mengatur warna ikon dengan warna biru cerah */
+      }
+      /* Gaya modal */
+      .modal-overlay {
+        background-color: rgba(
+          0,
+          0,
+          0,
+          0.3
+        ); /* Overlay yang sedikit lebih gelap untuk fokus yang lebih baik */
+        z-index: 999;
+      }
+      .modal-content {
+        background-color: white;
+        max-width: 90%;
+        max-height: 90%;
+        overflow-y: auto;
+        border-radius: 1.5rem; /* Sudut membulat yang konsisten */
+        padding: 2rem; /* Padding yang cukup */
+        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15); /* Bayangan yang lebih jelas */
+      }
+      /* Spinner untuk tombol refresh */
+      .fa-spin {
+        animation: fa-spin 1s infinite linear;
+      }
+      @keyframes fa-spin {
+        0% {
+          transform: rotate(0deg);
+        }
+        100% {
+          transform: rotate(360deg);
+        }
+      }
+      /* Gradien kustom untuk header - dasar putih bersih */
+      .header-gradient {
+        background-color: #ffffff; /* Header putih solid untuk tampilan bersih dan modern */
+      }
+      /* Gaya spesifik untuk tab Iuran dan Setor Saldo */
+      .iuran-tab-button.active {
+        background-color: #e0f2fe; /* light blue-100 */
+        color: #1e40af; /* dark blue-800 */
+        border-bottom-color: #3b82f6; /* blue-500 */
+      }
+      .iuran-tab-button {
+        transition: all 0.2s ease-in-out;
+        border-bottom: 2px solid transparent;
+      }
+      .iuran-tab-button:hover {
+        background-color: #f0f8ff; /* AliceBlue */
+      }
+    </style>
+  </head>
+  <body class="bg-gray-50">
+    <!-- Bagian Header -->
+    <header
+      class="header-gradient text-gray-800 p-4 shadow-md flex justify-between items-center relative"
+    >
+      <h1 class="text-xl md:text-2xl font-bold">Aplikasi Iuran Badminton</h1>
+      <!-- Tombol Refresh / Spinner -->
+      <button
+        id="refresh-button"
+        class="text-blue-600 text-xl md:text-2xl p-2 rounded-full bg-gray-100 shadow-md hover:bg-gray-200 transition-colors duration-200"
+      >
+        <i class="fas fa-sync-alt"></i>
+      </button>
+    </header>
+
+    <!-- Area Konten Utama -->
+    <main id="app-content" class="container mx-auto px-4 py-8 pb-20">
+      <!-- Konten akan dimuat secara dinamis di sini -->
+    </main>
+
+    <!-- Bilah Navigasi Bawah -->
+    <nav
+      class="fixed bottom-0 left-0 w-full bg-white border-t border-gray-200 shadow-lg z-50"
+    >
+      <div class="flex justify-around items-center h-16">
+        <button
+          id="nav-dashboard"
+          class="tab-button flex flex-col items-center justify-center p-2 text-gray-600 hover:text-blue-600 active"
+        >
+          <i class="fas fa-home text-xl mb-1"></i>
+          <span class="text-xs font-semibold">Dashboard</span>
+        </button>
+        <button
+          id="nav-iuran"
+          class="tab-button flex flex-col items-center justify-center p-2 text-gray-600 hover:text-blue-600"
+        >
+          <i class="fas fa-file-invoice-dollar text-xl mb-1"></i>
+          <span class="text-xs font-semibold">Iuran</span>
+        </button>
+        <button
+          id="nav-pengeluaran"
+          class="tab-button flex flex-col items-center justify-center p-2 text-gray-600 hover:text-blue-600"
+        >
+          <i class="fas fa-money-bill-wave text-xl mb-1"></i>
+          <span class="text-xs font-semibold">Pengeluaran</span>
+        </button>
+        <button
+          id="nav-pengaturan"
+          class="tab-button flex flex-col items-center justify-center p-2 text-gray-600 hover:text-blue-600"
+        >
+          <i class="fas fa-cog text-xl mb-1"></i>
+          <span class="text-xs font-semibold">Pengaturan</span>
+        </button>
+        <button
+          id="nav-anggota"
+          class="tab-button flex flex-col items-center justify-center p-2 text-gray-600 hover:text-blue-600"
+        >
+          <i class="fas fa-users text-xl mb-1"></i>
+          <span class="text-xs font-semibold">Anggota</span>
+        </button>
+      </div>
+    </nav>
+
+    <!-- Struktur Modal Global -->
+    <div
+      id="global-modal-overlay"
+      class="modal-overlay fixed inset-0 hidden items-center justify-center"
+    >
+      <div
+        id="global-modal-content"
+        class="modal-content relative w-full rounded-xl shadow-lg p-6"
+      >
+        <button
+          id="global-modal-close"
+          class="absolute top-4 right-4 text-gray-500 hover:text-gray-800 text-2xl font-bold"
+        >
+          &times;
+        </button>
+        <div id="global-modal-body">
+          <!-- Konten modal akan dimuat di sini -->
+        </div>
+      </div>
+    </div>
+
+    <!-- Kotak Pesan Global -->
+    <div
+      id="message-box"
+      class="fixed bottom-20 left-1/2 -translate-x-1/2 bg-blue-500 text-white px-4 py-2 rounded-lg shadow-md hidden z-50"
+    >
+      <!-- Pesan akan ditampilkan di sini -->
+    </div>
+
+    <script>
+      // Bungkus seluruh logika aplikasi di dalam DOMContentLoaded
+      document.addEventListener("DOMContentLoaded", () => {
+        // --- Konfigurasi Google Apps Script Web App URL ---
+        // PENTING: Ganti dengan URL Web App Google Apps Script Anda.
+        // Anda bisa mendapatkan ini setelah menyebarkan (deploy) skrip Code.gs Anda sebagai Web App.
+        const GAS_WEB_APP_URL =
+          "https://script.google.com/macros/s/AKfycbzU4QwlulzK2LLO9u90PBTCN-T9j-lNTPLB01RDRsK6uCxbGt72kQXT7V37MsNraA3A/exec"; // <-- GANTI INI
+
+        // --- Status Global ---
+        let members = [];
+        let currentTariff = 0;
+        let unpaidDebts = [];
+        let memberBalances = [];
+        let currentActiveTab = "dashboard";
+
+        // Cache untuk menyimpan data yang sudah diambil
+        let cachedData = {
+          dashboard: null,
+          iuran: null,
+          pengeluaran: null,
+          pengaturan: null,
+          anggota: null,
+        };
+
+        // --- Fungsi Utilitas ---
+
+        // Fungsi untuk menampilkan kotak pesan
+        function showMessageBox(message, type = "info") {
+          const msgBox = document.getElementById("message-box");
+          msgBox.textContent = message;
+          msgBox.classList.remove("bg-blue-500", "bg-green-500", "bg-red-500");
+          if (type === "success") {
+            msgBox.classList.add("bg-green-500");
+          } else if (type === "error") {
+            msgBox.classList.add("bg-red-500");
+          } else {
+            msgBox.classList.add("bg-blue-500");
+          }
+          msgBox.classList.remove("hidden");
+          setTimeout(() => {
+            msgBox.classList.add("hidden");
+          }, 3000); // Sembunyikan setelah 3 detik
+        }
+
+        // Fungsi untuk mengaktifkan/menonaktifkan spinner refresh
+        function toggleRefreshSpinner(show) {
+          const refreshButton = document.getElementById("refresh-button");
+          const spinnerIcon = refreshButton.querySelector("i");
+          if (show) {
+            spinnerIcon.classList.add("fa-spin");
+          } else {
+            spinnerIcon.classList.remove("fa-spin");
+          }
+        }
+
+        // --- Fungsi untuk Mengambil Data dari Google Apps Script ---
+        async function fetchData(action, params = {}, showSpinner = true) {
+          if (showSpinner) {
+            toggleRefreshSpinner(true);
+          }
+          try {
+            const urlParams = new URLSearchParams({
+              action,
+              ...params,
+            }).toString();
+            const response = await fetch(`${GAS_WEB_APP_URL}?${urlParams}`, {
+              method: "GET",
+            });
+            if (!response.ok) {
+              const errorText = await response.text();
+              throw new Error(
+                `HTTP error! status: ${response.status}, message: ${errorText}`
+              );
+            }
+            const result = await response.json();
+            if (result.error) {
+              throw new Error(result.error);
+            }
+            return result;
+          } catch (error) {
+            console.error("Error fetching data:", error);
+            showMessageBox(`Gagal memuat data: ${error.message}`, "error");
+            return null;
+          } finally {
+            if (showSpinner) {
+              toggleRefreshSpinner(false);
+            }
+          }
+        }
+
+        // --- Fungsi untuk Mengirim Data ke Google Apps Script ---
+        async function postData(action, payload) {
+          toggleRefreshSpinner(true); // Selalu tampilkan spinner untuk permintaan POST
+          try {
+            // Mengubah payload menjadi format x-www-form-urlencoded
+            const formData = new URLSearchParams();
+            formData.append("action", action);
+            formData.append("data", JSON.stringify(payload)); // Stringify data payload
+
+            const response = await fetch(GAS_WEB_APP_URL, {
+              method: "POST",
+              // Headers Content-Type tidak perlu diset secara manual untuk URLSearchParams,
+              // fetch akan menanganinya dengan benar sebagai application/x-www-form-urlencoded
+              body: formData,
+            });
+            if (!response.ok) {
+              const errorText = await response.text();
+              throw new Error(
+                `HTTP error! status: ${response.status}, message: ${errorText}`
+              );
+            }
+            const result = await response.json();
+            if (result.error) {
+              throw new Error(result.error);
+            }
+            showMessageBox(
+              result.message || "Data berhasil disimpan!",
+              "success"
+            );
+            return result;
+          } catch (error) {
+            console.error("Error posting data:", error);
+            showMessageBox(`Gagal menyimpan data: ${error.message}`, "error");
+            return null;
+          } finally {
+            toggleRefreshSpinner(false);
+            // Setelah POST apapun, segarkan data tab saat ini
+            await refreshAllCachedData(); // Panggil fungsi baru untuk refresh semua cache
+            refreshCurrentTab(); // Kemudian refresh tab yang aktif
+          }
+        }
+
+        // --- Fungsi baru untuk merefresh semua data yang di-cache ---
+        async function refreshAllCachedData() {
+          console.log(
+            "Memulai pengambilan data latar belakang untuk semua tab..."
+          );
+          // Mengambil semua data dan memperbarui cache
+          const dashboardData = await fetchData(
+            "getDashboardSummary",
+            {},
+            false
+          );
+          if (dashboardData) {
+            cachedData.dashboard = dashboardData;
+            unpaidDebts = dashboardData.unpaidDebts || [];
+            memberBalances = dashboardData.memberBalances || [];
+            currentTariff = dashboardData.currentTariff || 0;
+          }
+
+          const membersData = await fetchData("getMembers", {}, false);
+          if (membersData) {
+            cachedData.iuran = membersData;
+            cachedData.anggota = membersData;
+            members = membersData.members;
+            currentTariff = membersData.currentTariff;
+          }
+
+          const expensesData = await fetchData("getExpenses", {}, false);
+          if (expensesData) cachedData.pengeluaran = expensesData;
+
+          const tariffData = await fetchData("getCurrentTariff", {}, false);
+          if (tariffData) {
+            cachedData.pengaturan = tariffData;
+            currentTariff = tariffData.tariff;
+          }
+          console.log(
+            "Pengambilan data latar belakang untuk semua tab selesai."
+          );
+        }
+
+        // --- Fungsi untuk merefresh data tab yang sedang aktif ---
+        async function refreshCurrentTab() {
+          showMessageBox("Memuat ulang data...", "info");
+          switch (currentActiveTab) {
+            case "dashboard":
+              await renderDashboard(true); // Paksa pengambilan ulang
+              break;
+            case "iuran":
+              await renderIuran(true); // Paksa pengambilan ulang
+              break;
+            case "pengeluaran":
+              await renderPengeluaran(true); // Paksa pengambilan ulang
+              break;
+            case "pengaturan":
+              await renderPengaturan(true); // Paksa pengambilan ulang
+              break;
+            case "anggota":
+              await renderAnggota(true); // Paksa pengambilan ulang
+              break;
+          }
+        }
+
+        // --- Fungsi Render untuk Setiap Tab ---
+
+        async function renderDashboard(forceRefresh = false) {
+          const content = document.getElementById("app-content");
+          content.innerHTML = `
+                  <h2 class="text-xl md:text-2xl font-bold text-gray-800 mb-6 text-center">Ringkasan Aktivitas</h2>
+
+                  <!-- Kartu Ringkasan Baru -->
+                  <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+                      <!-- Kartu Jumlah Belum Bayar -->
+                      <div id="card-belum-bayar" class="bg-white rounded-xl shadow-lg p-6 flex flex-col items-center justify-center text-center cursor-pointer hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
+                          <div class="p-3 rounded-full bg-red-100 text-red-600 mb-4">
+                              <i class="fas fa-exclamation-triangle text-3xl"></i>
+                          </div>
+                          <h3 class="text-lg font-semibold text-gray-700 mb-2">Jumlah Belum Bayar</h3>
+                          <p class="text-4xl font-extrabold text-red-700">Rp 0</p>
+                          <p class="text-sm text-gray-500 mt-2">Ketuk untuk detail iuran</p>
+                      </div>
+
+                      <!-- Kartu Total Saldo Kas -->
+                      <div class="bg-white rounded-xl shadow-lg p-6 flex flex-col items-center justify-center text-center">
+                          <div class="p-3 rounded-full bg-green-100 text-green-600 mb-4">
+                              <i class="fas fa-wallet text-3xl"></i>
+                          </div>
+                          <h3 class="text-lg font-semibold text-gray-700 mb-2">Total Saldo Kas</h3>
+                          <p id="total-balance-display" class="text-4xl font-extrabold text-green-700">Rp 0</p>
+                          <p class="text-sm text-gray-500 mt-2">Total dana yang tersedia</p>
+                      </div>
+                  </div>
+
+                  <!-- Tabel Saldo Anggota -->
+                  <div class="bg-white rounded-xl shadow-lg p-4 md:p-6">
+                      <h3 class="text-xl font-bold text-gray-800 mb-4">Tabel Saldo Anggota</h3>
+                      <div class="overflow-x-auto rounded-lg border border-gray-200 shadow-sm">
+                          <table class="min-w-full divide-y divide-gray-200">
+                              <thead class="bg-gray-100">
+                                  <tr>
+                                      <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider rounded-tl-lg">Nama</th>
+                                      <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider rounded-tr-lg">Saldo</th>
+                                  </tr>
+                              </thead>
+                              <tbody id="saldo-table-body" class="bg-white divide-y divide-gray-200">
+                                  <!-- Data saldo akan dimuat di sini -->
+                              </tbody>
+                          </table>
+                      </div>
+                      <div class="mt-4 text-xs md:text-sm text-gray-600 text-center">
+                          <p>Data saldo diperbarui secara real-time.</p>
+                      </div>
+                  </div>
+              `;
+
+          let dashboardData;
+          if (forceRefresh || !cachedData.dashboard) {
+            dashboardData = await fetchData("getDashboardSummary", {}, true); // Tampilkan spinner untuk refresh eksplisit atau pemuatan awal
+            if (dashboardData) cachedData.dashboard = dashboardData;
+          } else {
+            dashboardData = cachedData.dashboard;
+          }
+
+          if (dashboardData) {
+            unpaidDebts = dashboardData.unpaidDebts || [];
+            memberBalances = dashboardData.memberBalances || [];
+            currentTariff = dashboardData.currentTariff || 0; // Pastikan tarif tersedia secara global
+
+            // Perbarui Kartu Jumlah Belum Bayar
+            const totalUnpaid = unpaidDebts.reduce(
+              (sum, debt) => sum + debt.amount,
+              0
+            );
+            document
+              .getElementById("card-belum-bayar")
+              .querySelector(
+                "p"
+              ).textContent = `Rp ${totalUnpaid.toLocaleString("id-ID")}`;
+
+            // Hitung dan perbarui Kartu Total Saldo Kas: Hanya jumlahkan saldo positif
+            const totalCashBalance = memberBalances.reduce((sum, member) => {
+              return sum + (member.balance > 0 ? member.balance : 0);
+            }, 0);
+            document.getElementById(
+              "total-balance-display"
+            ).textContent = `Rp ${totalCashBalance.toLocaleString("id-ID")}`;
+
+            // Tabel Saldo
+            const saldoTableBody = document.getElementById("saldo-table-body");
+            saldoTableBody.innerHTML = memberBalances
+              .map(
+                (member) => `
+                    <tr>
+                        <td class="px-4 py-2 whitespace-nowrap text-sm md:text-base font-medium text-gray-900 rounded-bl-lg">${
+                          member.name
+                        }</td>
+                        <td class="px-4 py-2 whitespace-nowrap text-sm md:text-base ${
+                          member.balance < 0
+                            ? "text-red-600 font-bold"
+                            : "text-gray-900"
+                        } rounded-br-lg">
+                            Rp ${member.balance.toLocaleString("id-ID")}
+                        </td>
+                    </tr>
+                `
+              )
+              .join("");
+
+            // Event listener untuk kartu "Jumlah Belum Bayar"
+            document
+              .getElementById("card-belum-bayar")
+              .addEventListener("click", () => {
+                if (unpaidDebts.length === 0) {
+                  showMessageBox("Tidak ada iuran yang belum dibayar.", "info");
+                  return;
+                }
+                let debtListHtml = `
+                        <h3 class="text-lg md:text-xl font-bold mb-4 text-gray-800">Detail Iuran Belum Bayar</h3>
+                        <div class="max-h-80 overflow-y-auto">
+                            <table class="min-w-full divide-y divide-gray-200">
+                                <thead class="bg-gray-50">
+                                    <tr>
+                                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Nama</th>
+                                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Nominal</th>
+                                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Tanggal</th>
+                                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Aksi</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="bg-white divide-y divide-gray-200">
+                                    ${unpaidDebts
+                                      .map(
+                                        (debt) => `
+                                        <tr data-member-id="${
+                                          debt.memberId
+                                        }" data-debt-amount="${
+                                          debt.amount
+                                        }" data-member-name="${debt.name}">
+                                            <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-900">${
+                                              debt.name
+                                            }</td>
+                                            <td class="px-4 py-2 whitespace-nowrap text-sm text-red-600 font-semibold">Rp ${debt.amount.toLocaleString(
+                                              "id-ID"
+                                            )}</td>
+                                            <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-700">${
+                                              debt.date
+                                            }</td>
+                                            <td class="px-4 py-2 whitespace-nowrap text-sm">
+                                                <button class="pay-debt-btn bg-blue-500 text-white px-3 py-1 rounded-md text-xs hover:bg-blue-600 transition-colors">Bayar</button>
+                                            </td>
+                                        </tr>
+                                    `
+                                      )
+                                      .join("")}
+                                </tbody>
+                            </table>
+                        </div>
+                    `;
+                openModal(debtListHtml);
+
+                // Tambahkan event listener untuk tombol "Bayar" di dalam modal
+                document.querySelectorAll(".pay-debt-btn").forEach((button) => {
+                  button.addEventListener("click", (e) => {
+                    const row = e.target.closest("tr");
+                    const memberId = row.dataset.memberId;
+                    const debtAmount = parseFloat(row.dataset.debtAmount);
+                    const memberName = row.dataset.memberName;
+
+                    // Buka modal baru untuk pembayaran utang
+                    openModal(`
+                            <h3 class="text-lg md:text-xl font-bold mb-4 text-gray-800">Bayar Utang</h3>
+                            <form id="form-pay-debt" class="space-y-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">Anggota</label>
+                                    <input type="text" value="${memberName}" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm bg-gray-100 cursor-not-allowed text-sm md:text-base" readonly>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">Jumlah Utang</label>
+                                    <input type="text" value="Rp ${debtAmount.toLocaleString(
+                                      "id-ID"
+                                    )}" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm bg-gray-100 cursor-not-allowed text-sm md:text-base" readonly>
+                                </div>
+                                <div>
+                                    <label for="payment-amount" class="block text-sm font-medium text-gray-700 mb-2">Nominal Pembayaran (Rp)</label>
+                                    <input type="number" id="payment-amount" min="1" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm md:text-base" placeholder="Masukkan jumlah pembayaran">
+                                </div>
+                                <div class="flex justify-end gap-4">
+                                    <button type="button" id="cancel-pay-debt" class="bg-gray-300 text-gray-800 py-2 px-4 rounded-md hover:bg-gray-400 text-sm md:text-base">Batal</button>
+                                    <button type="submit" class="bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 text-sm md:text-base">Proses Pembayaran</button>
+                                </div>
+                            </form>
+                        `);
+
+                    document
+                      .getElementById("cancel-pay-debt")
+                      .addEventListener("click", closeModal);
+                    document
+                      .getElementById("form-pay-debt")
+                      .addEventListener("submit", async (payEvent) => {
+                        payEvent.preventDefault();
+                        const paymentAmount = parseInt(
+                          document.getElementById("payment-amount").value
+                        );
+
+                        if (isNaN(paymentAmount) || paymentAmount <= 0) {
+                          showMessageBox(
+                            "Nominal pembayaran tidak valid.",
+                            "error"
+                          );
+                          return;
+                        }
+                        if (paymentAmount > debtAmount) {
+                          showMessageBox(
+                            "Nominal pembayaran tidak boleh melebihi jumlah utang.",
+                            "error"
+                          );
+                          return;
+                        }
+
+                        closeModal(); // Tutup modal pembayaran
+                        const payload = {
+                          memberId: memberId,
+                          amount: paymentAmount,
+                        };
+                        const result = await postData(
+                          "depositBalance",
+                          payload
+                        ); // Gunakan depositBalance untuk mengurangi utang
+                        if (result) {
+                          // Refresh dashboard untuk menampilkan perubahan
+                          refreshCurrentTab();
+                        }
+                      });
+                  });
+                });
+              });
+          }
+        }
+
+        async function renderIuran(forceRefresh = false) {
+          const content = document.getElementById("app-content");
+          content.innerHTML = `
+                  <h2 class="text-xl md:text-2xl font-bold text-gray-800 mb-6 text-center">Pencatatan Iuran</h2>
+
+                  <div class="bg-white rounded-xl shadow-lg p-4 md:p-6 mb-6">
+                      <div class="flex border-b border-gray-200 mb-6">
+                          <button id="tab-individu" class="iuran-tab-button flex-1 py-3 text-center text-blue-600 font-semibold border-b-2 border-blue-600 transition-colors duration-300 text-sm md:text-base">Bayar Iuran</button>
+                          <button id="tab-setor-saldo" class="iuran-tab-button flex-1 py-3 text-center text-gray-600 font-semibold border-b-2 border-transparent hover:border-gray-300 transition-colors duration-300 text-sm md:text-base">Setor Saldo Kas</button>
+                      </div>
+
+                      <!-- Konten Tab Bayar Iuran -->
+                      <div id="content-individu">
+                          <form id="form-input-individu" class="space-y-4 md:space-y-5">
+                              <div>
+                                  <label for="tanggal-iuran" class="block text-sm font-medium text-gray-700 mb-2">Tanggal Iuran</label>
+                                  <input type="date" id="tanggal-iuran" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm md:text-base">
+                              </div>
+                              <div>
+                                  <label for="member-select-individu" class="block text-sm font-medium text-gray-700 mb-2">Nama Anggota</label>
+                                  <select id="member-select-individu" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm md:text-base">
+                                      <option value="">Pilih Anggota</option>
+                                  </select>
+                              </div>
+                              <div>
+                                  <label for="jumlah-main-individu" class="block text-sm font-medium text-gray-700 mb-2">Jumlah Main</label>
+                                  <input type="number" id="jumlah-main-individu" min="1" value="1" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm md:text-base">
+                              </div>
+                              <div id="status-bayar-wrapper">
+                                  <label for="status-bayar-individu" class="block text-sm font-medium text-gray-700 mb-2">Status Bayar</label>
+                                  <select id="status-bayar-individu" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm md:text-base">
+                                      <option value="belum_bayar">Belum Bayar</option>
+                                      <option value="sudah_bayar">Sudah Bayar</option>
+                                  </select>
+                                  <p id="saldo-info-individu" class="text-xs md:text-sm text-green-600 font-medium mt-2 hidden"><i class="fas fa-check-circle mr-1"></i>Saldo mencukupi, akan dipotong otomatis.</p>
+                              </div>
+                              <div>
+                                  <label for="nominal-iuran" class="block text-sm font-medium text-gray-700 mb-2">Nominal Iuran (Rp)</label>
+                                  <input type="text" id="nominal-iuran" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm bg-gray-100 cursor-not-allowed text-sm md:text-base" readonly value="Rp 0">
+                              </div>
+                              <button type="submit" class="w-full bg-blue-600 text-white py-2 md:py-3 px-4 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors duration-200 text-base md:text-lg font-semibold">Kirim Iuran</button>
+                          </form>
+                      </div>
+
+                      <!-- Konten Tab Setor Saldo Kas -->
+                      <div id="content-setor-saldo" class="hidden">
+                          <form id="form-setor-saldo" class="space-y-4 md:space-y-5">
+                              <div>
+                                  <label for="member-select-setor" class="block text-sm font-medium text-gray-700 mb-2">Nama Anggota</label>
+                                  <select id="member-select-setor" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm md:text-base">
+                                      <option value="">Pilih Anggota</option>
+                                  </select>
+                              </div>
+                              <div>
+                                  <label for="nominal-setor" class="block text-sm font-medium text-gray-700 mb-2">Nominal Setor (Rp)</label>
+                                  <input type="number" id="nominal-setor" min="1" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm md:text-base" placeholder="Contoh: 50000">
+                              </div>
+                              <button type="submit" class="w-full bg-blue-600 text-white py-2 md:py-3 px-4 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors duration-200 text-base md:text-lg font-semibold">Setor Saldo</button>
+                          </form>
+                      </div>
+                  </div>
+              `;
+
+          // Atur tanggal default untuk "Tanggal Iuran"
+          const today = new Date().toISOString().split("T")[0];
+          document.getElementById("tanggal-iuran").value = today;
+
+          let membersData;
+          if (forceRefresh || !cachedData.iuran) {
+            membersData = await fetchData("getMembers", {}, true);
+            if (membersData) cachedData.iuran = membersData;
+          } else {
+            membersData = cachedData.iuran;
+          }
+
+          if (membersData) {
+            members = membersData.members || [];
+            currentTariff = membersData.currentTariff || 0; // Perbarui tarif global
+          } else {
+            members = [];
+          }
+
+          // Isi dropdown anggota
+          const memberSelectIndividu = document.getElementById(
+            "member-select-individu"
+          );
+          const memberSelectSetor = document.getElementById(
+            "member-select-setor"
+          );
+          // Hapus opsi yang ada sebelum mengisi
+          memberSelectIndividu.innerHTML =
+            '<option value="">Pilih Anggota</option>';
+          memberSelectSetor.innerHTML =
+            '<option value="">Pilih Anggota</option>';
+
+          members.forEach((member) => {
+            const option1 = document.createElement("option");
+            option1.value = member.id;
+            option1.textContent = member.name;
+            memberSelectIndividu.appendChild(option1);
+
+            const option2 = document.createElement("option");
+            option2.value = member.id;
+            option2.textContent = member.name;
+            memberSelectSetor.appendChild(option2);
+          });
+
+          // Logika Input Iuran
+          const formIndividu = document.getElementById("form-input-individu");
+          const memberSelectIndividuEl = document.getElementById(
+            "member-select-individu"
+          );
+          const jumlahMainIndividuEl = document.getElementById(
+            "jumlah-main-individu"
+          );
+          const tanggalIuranEl = document.getElementById("tanggal-iuran");
+          const nominalIuranEl = document.getElementById("nominal-iuran");
+          const statusBayarWrapper = document.getElementById(
+            "status-bayar-wrapper"
+          );
+          const statusBayarIndividuEl = document.getElementById(
+            "status-bayar-individu"
+          );
+          const saldoInfoIndividuEl = document.getElementById(
+            "saldo-info-individu"
+          );
+
+          // Fungsi untuk memperbarui nominal dan memeriksa saldo
+          const updateNominalAndSaldo = () => {
+            const jumlahMain = parseInt(jumlahMainIndividuEl.value);
+            const nominal = jumlahMain * currentTariff;
+            nominalIuranEl.value = `Rp ${nominal.toLocaleString("id-ID")}`;
+
+            const selectedMemberId = memberSelectIndividuEl.value;
+            const member = members.find((m) => m.id === selectedMemberId);
+
+            if (member && member.balance >= nominal && nominal > 0) {
+              statusBayarWrapper.classList.add("hidden");
+              statusBayarIndividuEl.value = "sudah_bayar"; // Paksa ke 'sudah_bayar'
+              saldoInfoIndividuEl.classList.remove("hidden");
+            } else {
+              statusBayarWrapper.classList.remove("hidden");
+              statusBayarIndividuEl.value = "belum_bayar"; // Reset ke 'belum_bayar' jika saldo tidak cukup
+              saldoInfoIndividuEl.classList.add("hidden");
+            }
+          };
+
+          memberSelectIndividuEl.addEventListener(
+            "change",
+            updateNominalAndSaldo
+          );
+          jumlahMainIndividuEl.addEventListener("input", updateNominalAndSaldo);
+          // Panggilan awal untuk mengatur nominal dan memeriksa saldo
+          updateNominalAndSaldo();
+
+          formIndividu.addEventListener("submit", async (e) => {
+            e.preventDefault();
+            const memberId = memberSelectIndividuEl.value;
+            const jumlahMain = parseInt(jumlahMainIndividuEl.value);
+            const statusBayar = statusBayarIndividuEl.value; // Akan menjadi 'sudah_bayar' jika tersembunyi
+            const tanggal = tanggalIuranEl.value; // Ambil tanggal dari kolom readonly
+
+            if (!memberId || isNaN(jumlahMain) || jumlahMain <= 0 || !tanggal) {
+              showMessageBox(
+                "Harap lengkapi semua bidang dengan benar.",
+                "error"
+              );
+              return;
+            }
+
+            const payload = {
+              type: "individu",
+              memberId,
+              jumlahMain,
+              statusBayar,
+              tariff: currentTariff,
+              date: tanggal, // Sertakan tanggal
+            };
+            const result = await postData("recordPayment", payload);
+
+            if (result) {
+              formIndividu.reset();
+              tanggalIuranEl.value = today; // Reset tanggal ke hari ini
+              updateNominalAndSaldo(); // Reset nominal dan info saldo
+              // refreshCurrentTab() dipanggil oleh blok finally postData
+            }
+          });
+
+          // Logika Setor Saldo
+          const formSetorSaldo = document.getElementById("form-setor-saldo");
+          formSetorSaldo.addEventListener("submit", async (e) => {
+            e.preventDefault();
+            const memberId = document.getElementById(
+              "member-select-setor"
+            ).value;
+            const nominalSetor = parseInt(
+              document.getElementById("nominal-setor").value
+            );
+
+            if (!memberId || isNaN(nominalSetor) || nominalSetor <= 0) {
+              showMessageBox(
+                "Harap lengkapi semua bidang dengan benar.",
+                "error"
+              );
+              return;
+            }
+
+            const payload = {
+              memberId,
+              amount: nominalSetor,
+            };
+            const result = await postData("depositBalance", payload);
+
+            if (result) {
+              formSetorSaldo.reset();
+              // refreshCurrentTab() dipanggil oleh blok finally postData
+            }
+          });
+
+          // Logika pengalihan tab untuk bagian Iuran
+          const tabIndividu = document.getElementById("tab-individu");
+          const tabSetorSaldo = document.getElementById("tab-setor-saldo");
+          const contentIndividu = document.getElementById("content-individu");
+          const contentSetorSaldo = document.getElementById(
+            "content-setor-saldo"
+          );
+
+          const switchIuranTab = (activeTabId) => {
+            tabIndividu.classList.remove("iuran-tab-button", "active");
+            tabSetorSaldo.classList.remove("iuran-tab-button", "active");
+            tabIndividu.classList.add("text-gray-600");
+            tabSetorSaldo.classList.add("text-gray-600");
+
+            if (activeTabId === "tab-individu") {
+              tabIndividu.classList.add("iuran-tab-button", "active");
+              tabSetorSaldo.classList.remove("active"); // Pastikan tab lain tidak aktif
+              contentIndividu.classList.remove("hidden");
+              contentSetorSaldo.classList.add("hidden");
+            } else if (activeTabId === "tab-setor-saldo") {
+              tabSetorSaldo.classList.add("iuran-tab-button", "active");
+              tabIndividu.classList.remove("active"); // Pastikan tab lain tidak aktif
+              contentSetorSaldo.classList.remove("hidden");
+              contentIndividu.classList.add("hidden");
+            }
+          };
+
+          tabIndividu.addEventListener("click", () =>
+            switchIuranTab("tab-individu")
+          );
+          tabSetorSaldo.addEventListener("click", () =>
+            switchIuranTab("tab-setor-saldo")
+          );
+
+          // Default ke tab 'Bayar Iuran'
+          switchIuranTab("tab-individu");
+        }
+
+        async function renderPengeluaran(forceRefresh = false) {
+          const content = document.getElementById("app-content");
+          content.innerHTML = `
+                  <h2 class="text-xl md:text-2xl font-bold text-gray-800 mb-6 text-center">Catat Pengeluaran</h2>
+
+                  <div class="bg-white rounded-xl shadow-lg p-4 md:p-6 mb-6">
+                      <form id="form-pengeluaran" class="space-y-4 md:space-y-5">
+                          <div>
+                              <label for="keterangan-pengeluaran" class="block text-sm font-medium text-gray-700 mb-2">Keterangan</label>
+                              <input type="text" id="keterangan-pengeluaran" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm md:text-base" placeholder="Contoh: Beli kok, Sewa lapangan">
+                          </div>
+                          <div>
+                              <label for="nominal-pengeluaran" class="block text-sm font-medium text-gray-700 mb-2">Nominal (Rp)</label>
+                              <input type="number" id="nominal-pengeluaran" min="1" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm md:text-base" placeholder="Contoh: 150000">
+                          </div>
+                          <div>
+                              <label for="tanggal-pengeluaran" class="block text-sm font-medium text-gray-700 mb-2">Tanggal</label>
+                              <input type="date" id="tanggal-pengeluaran" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm md:text-base">
+                          </div>
+                          <button type="submit" class="w-full bg-blue-600 text-white py-2 md:py-3 px-4 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors duration-200 text-base md:text-lg font-semibold">Kirim Pengeluaran</button>
+                      </form>
+                  </div>
+
+                  <div class="bg-white rounded-xl shadow-lg p-4 md:p-6">
+                      <h3 class="text-xl font-bold text-gray-800 mb-4">Daftar Pengeluaran</h3>
+                      <div class="overflow-x-auto rounded-lg border border-gray-200 shadow-sm">
+                          <table class="min-w-full divide-y divide-gray-200">
+                              <thead class="bg-gray-100">
+                                  <tr>
+                                      <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider rounded-tl-lg">Tanggal</th>
+                                      <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Keterangan</th>
+                                      <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider rounded-tr-lg">Nominal</th>
+                                  </tr>
+                              </thead>
+                              <tbody id="pengeluaran-table-body" class="bg-white divide-y divide-gray-200">
+                                  <!-- Data pengeluaran akan dimuat di sini -->
+                              </tbody>
+                          </table>
+                      </div>
+                      <div class="mt-4 text-xs md:text-sm text-gray-600 text-center">
+                          <p>Catatan semua pengeluaran terkait badminton.</p>
+                      </div>
+                  </div>
+              `;
+
+          // Atur tanggal default ke hari ini
+          const today = new Date().toISOString().split("T")[0];
+          document.getElementById("tanggal-pengeluaran").value = today;
+
+          let expensesData;
+          if (forceRefresh || !cachedData.pengeluaran) {
+            expensesData = await fetchData("getExpenses", {}, true);
+            if (expensesData) cachedData.pengeluaran = expensesData;
+          } else {
+            expensesData = cachedData.pengeluaran;
+          }
+
+          if (expensesData && expensesData.expenses) {
+            const pengeluaranTableBody = document.getElementById(
+              "pengeluaran-table-body"
+            );
+            pengeluaranTableBody.innerHTML = expensesData.expenses
+              .map(
+                (expense) => `
+                      <tr>
+                          <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-900">${
+                            expense.date
+                          }</td>
+                          <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-900">${
+                            expense.description
+                          }</td>
+                          <td class="px-4 py-2 whitespace-nowrap text-sm text-red-600 font-semibold">Rp ${expense.amount.toLocaleString(
+                            "id-ID"
+                          )}</td>
+                      </tr>
+                  `
+              )
+              .join("");
+          } else {
+            document.getElementById(
+              "pengeluaran-table-body"
+            ).innerHTML = `<tr><td colspan="3" class="text-center py-4 text-gray-500">Tidak ada data pengeluaran.</td></tr>`;
+          }
+
+          // Tangani pengiriman formulir
+          document
+            .getElementById("form-pengeluaran")
+            .addEventListener("submit", async (e) => {
+              e.preventDefault();
+              const description = document.getElementById(
+                "keterangan-pengeluaran"
+              ).value;
+              const amount = parseInt(
+                document.getElementById("nominal-pengeluaran").value
+              );
+              const date = document.getElementById("tanggal-pengeluaran").value;
+
+              if (!description || isNaN(amount) || amount <= 0 || !date) {
+                showMessageBox(
+                  "Harap lengkapi semua bidang dengan benar.",
+                  "error"
+                );
+                return;
+              }
+
+              const payload = {
+                description,
+                amount,
+                date,
+              };
+              const result = await postData("recordExpense", payload);
+
+              if (result) {
+                document.getElementById("form-pengeluaran").reset();
+                document.getElementById("tanggal-pengeluaran").value = today; // Reset tanggal
+                // refreshCurrentTab() dipanggil oleh blok finally postData
+              }
+            });
+        }
+
+        async function renderPengaturan(forceRefresh = false) {
+          const content = document.getElementById("app-content");
+          content.innerHTML = `
+                  <h2 class="text-xl md:text-2xl font-bold text-gray-800 mb-6 text-center">Pengaturan Aplikasi</h2>
+
+                  <div class="bg-white rounded-xl shadow-lg p-4 md:p-6 mb-6">
+                      <h3 class="text-lg md:text-xl font-bold text-gray-700 mb-4">Atur Tarif Main</h3>
+                      <form id="form-atur-tarif" class="space-y-4 md:space-y-5">
+                          <div>
+                              <label for="nominal-tarif" class="block text-sm font-medium text-gray-700 mb-2">Nominal Tarif Main (Rp)</label>
+                              <input type="number" id="nominal-tarif" min="0" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm md:text-base" placeholder="Contoh: 15000">
+                          </div>
+                          <button type="submit" class="w-full bg-blue-600 text-white py-2 md:py-3 px-4 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors duration-200 text-base md:text-lg font-semibold">Simpan Tarif</button>
+                      </form>
+                      <p class="text-xs md:text-sm text-gray-500 mt-4 text-center">Tarif yang disimpan akan berlaku mulai hari ini.</p>
+                      <p id="current-tariff-display" class="text-base md:text-lg font-semibold text-gray-800 mt-4 text-center">Tarif saat ini: Rp 0</p>
+                  </div>
+
+                  <div class="bg-white rounded-xl shadow-lg p-4 md:p-6">
+                      <h3 class="text-lg md:text-xl font-bold text-gray-700 mb-4">Informasi Aplikasi</h3>
+                      <div class="text-gray-700 space-y-2">
+                          <p class="text-sm md:text-base"><i class="fas fa-info-circle mr-2 text-blue-500"></i>Versi: 1.0.0</p>
+                          <p class="text-sm md:text-base"><i class="fas fa-code-branch mr-2 text-green-500"></i>Pengembang: AI Assistant</p>
+                          <p class="text-sm md:text-base"><i class="fas fa-calendar-alt mr-2 text-purple-500"></i>Tanggal Rilis: Juli 2025</p>
+                          <p class="text-xs md:text-sm text-gray-500 mt-4">Aplikasi ini dirancang untuk membantu pengelolaan iuran bulutangkis dengan mudah.</p>
+                      </div>
+                  </div>
+              `;
+
+          let tariffData;
+          if (forceRefresh || !cachedData.pengaturan) {
+            tariffData = await fetchData("getCurrentTariff", {}, true);
+            if (tariffData) cachedData.pengaturan = tariffData;
+          } else {
+            tariffData = cachedData.pengaturan;
+          }
+
+          if (tariffData && tariffData.tariff) {
+            currentTariff = tariffData.tariff; // Perbarui tarif global
+            document.getElementById("nominal-tarif").value = currentTariff;
+            document.getElementById(
+              "current-tariff-display"
+            ).textContent = `Tarif saat ini: Rp ${currentTariff.toLocaleString(
+              "id-ID"
+            )}`;
+          } else {
+            document.getElementById(
+              "current-tariff-display"
+            ).textContent = `Tarif saat ini: Belum diatur`;
+          }
+
+          // Tangani pengiriman formulir
+          document
+            .getElementById("form-atur-tarif")
+            .addEventListener("submit", async (e) => {
+              e.preventDefault();
+              const nominalTarif = parseInt(
+                document.getElementById("nominal-tarif").value
+              );
+
+              if (isNaN(nominalTarif) || nominalTarif < 0) {
+                showMessageBox("Nominal tarif tidak valid.", "error");
+                return;
+              }
+
+              const payload = {
+                tariff: nominalTarif,
+                date: new Date().toISOString().split("T")[0], // Tanggal hari ini
+              };
+              const result = await postData("setTariff", payload);
+
+              if (result) {
+                currentTariff = nominalTarif; // Perbarui tarif global
+                document.getElementById(
+                  "current-tariff-display"
+                ).textContent = `Tarif saat ini: Rp ${currentTariff.toLocaleString(
+                  "id-ID"
+                )}`;
+                // refreshCurrentTab() dipanggil oleh blok finally postData
+              }
+            });
+        }
+
+        async function renderAnggota(forceRefresh = false) {
+          const content = document.getElementById("app-content");
+          content.innerHTML = `
+                  <h2 class="text-xl md:text-2xl font-bold text-gray-800 mb-6 text-center">Manajemen Anggota</h2>
+
+                  <div class="bg-white rounded-xl shadow-lg p-4 md:p-6 mb-6">
+                      <h3 class="text-lg md:text-xl font-bold text-gray-700 mb-4">Tambah Anggota Baru</h3>
+                      <form id="form-tambah-anggota" class="flex flex-col sm:flex-row gap-4">
+                          <input type="text" id="nama-anggota-baru" class="flex-grow px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm md:text-base" placeholder="Nama Anggota Baru">
+                          <button type="submit" class="bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors duration-200 text-base font-semibold">Tambah Anggota</button>
+                      </form>
+                  </div>
+
+                  <div class="bg-white rounded-xl shadow-lg p-4 md:p-6">
+                      <h3 class="text-xl font-bold text-gray-800 mb-4">Daftar Anggota</h3>
+                      <div class="overflow-x-auto rounded-lg border border-gray-200 shadow-sm">
+                          <table class="min-w-full divide-y divide-gray-200">
+                              <thead class="bg-gray-100">
+                                  <tr>
+                                      <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider rounded-tl-lg">Nama</th>
+                                      <th scope="col" class="px-4 py-2 text-right text-xs font-medium text-gray-600 uppercase tracking-wider rounded-tr-lg">Aksi</th>
+                                  </tr>
+                              </thead>
+                              <tbody id="anggota-table-body" class="bg-white divide-y divide-gray-200">
+                                  <!-- Data anggota akan dimuat di sini -->
+                              </tbody>
+                          </table>
+                      </div>
+                      <div class="mt-4 text-xs md:text-sm text-gray-600 text-center">
+                          <p>Kelola daftar anggota klub bulutangkis Anda.</p>
+                      </div>
+                  </div>
+              `;
+
+          let membersData;
+          if (forceRefresh || !cachedData.anggota) {
+            membersData = await fetchData("getMembers", {}, true);
+            if (membersData) cachedData.anggota = membersData;
+          } else {
+            membersData = cachedData.anggota;
+          }
+
+          if (membersData && membersData.members) {
+            members = membersData.members; // Perbarui array anggota global
+          } else {
+            members = [];
+          }
+          const anggotaTableBody =
+            document.getElementById("anggota-table-body");
+          renderMembersTable(anggotaTableBody);
+
+          // Tangani pengiriman formulir Tambah Anggota
+          document
+            .getElementById("form-tambah-anggota")
+            .addEventListener("submit", async (e) => {
+              e.preventDefault();
+              const newMemberName = document
+                .getElementById("nama-anggota-baru")
+                .value.trim();
+              if (!newMemberName) {
+                showMessageBox("Nama anggota tidak boleh kosong.", "error");
+                return;
+              }
+
+              const payload = { name: newMemberName };
+              const result = await postData("addMember", payload);
+
+              if (result) {
+                document.getElementById("nama-anggota-baru").value = ""; // Hapus input
+                // refreshCurrentTab() dipanggil oleh blok finally postData
+              }
+            });
+
+          // Fungsi untuk merender/merender ulang tabel anggota
+          function renderMembersTable(tableBodyEl) {
+            tableBodyEl.innerHTML = members
+              .map(
+                (member) => `
+                      <tr data-member-id="${member.id}">
+                          <td class="px-4 py-2 whitespace-nowrap text-sm md:text-base font-medium text-gray-900">
+                              <span class="member-name-display">${member.name}</span>
+                              <input type="text" class="member-name-input hidden w-full px-2 py-1 border border-gray-300 rounded-md text-sm" value="${member.name}">
+                          </td>
+                          <td class="px-4 py-2 whitespace-nowrap text-right text-sm md:text-base font-medium">
+                              <button class="edit-member-btn text-blue-600 hover:text-blue-900 mr-2 p-1 rounded-md hover:bg-blue-100 transition-colors duration-200"><i class="fas fa-edit"></i></button>
+                              <button class="save-member-btn text-green-600 hover:text-green-900 mr-2 hidden p-1 rounded-md hover:bg-green-100 transition-colors duration-200"><i class="fas fa-save"></i></button>
+                              <button class="cancel-edit-btn text-gray-600 hover:text-gray-900 mr-2 hidden p-1 rounded-md hover:bg-gray-100 transition-colors duration-200"><i class="fas fa-times"></i></button>
+                              <button class="delete-member-btn text-red-600 hover:text-red-900 p-1 rounded-md hover:bg-red-100 transition-colors duration-200"><i class="fas fa-trash-alt"></i></button>
+                          </td>
+                      </tr>
+                  `
+              )
+              .join("");
+
+            // Tambahkan event listener untuk edit, simpan, batal, hapus
+            tableBodyEl
+              .querySelectorAll(".edit-member-btn")
+              .forEach((button) => {
+                button.addEventListener("click", (e) => {
+                  const row = e.target.closest("tr");
+                  const displaySpan = row.querySelector(".member-name-display");
+                  const inputField = row.querySelector(".member-name-input");
+                  const editBtn = row.querySelector(".edit-member-btn");
+                  const saveBtn = row.querySelector(".save-member-btn");
+                  const cancelBtn = row.querySelector(".cancel-edit-btn");
+
+                  displaySpan.classList.add("hidden");
+                  inputField.classList.remove("hidden");
+                  editBtn.classList.add("hidden");
+                  saveBtn.classList.remove("hidden");
+                  cancelBtn.classList.remove("hidden");
+                  inputField.focus();
+                });
+              });
+
+            tableBodyEl
+              .querySelectorAll(".cancel-edit-btn")
+              .forEach((button) => {
+                button.addEventListener("click", (e) => {
+                  const row = e.target.closest("tr");
+                  const displaySpan = row.querySelector(".member-name-display");
+                  const inputField = row.querySelector(".member-name-input");
+                  const editBtn = row.querySelector(".edit-member-btn");
+                  const saveBtn = row.querySelector(".save-member-btn");
+                  const cancelBtn = row.querySelector(".cancel-edit-btn");
+
+                  inputField.value = displaySpan.textContent; // Batalkan perubahan
+                  displaySpan.classList.remove("hidden");
+                  inputField.classList.add("hidden");
+                  editBtn.classList.remove("hidden");
+                  saveBtn.classList.add("hidden");
+                  cancelBtn.classList.add("hidden");
+                });
+              });
+
+            tableBodyEl
+              .querySelectorAll(".save-member-btn")
+              .forEach((button) => {
+                button.addEventListener("click", async (e) => {
+                  const row = e.target.closest("tr");
+                  const memberId = row.dataset.memberId;
+                  const inputField = row.querySelector(".member-name-input");
+                  const newName = inputField.value.trim();
+
+                  if (!newName) {
+                    showMessageBox("Nama anggota tidak boleh kosong.", "error");
+                    return;
+                  }
+
+                  const payload = { id: memberId, name: newName };
+                  const result = await postData("updateMember", payload);
+
+                  if (result) {
+                    // refreshCurrentTab() dipanggil oleh blok finally postData
+                  }
+                });
+              });
+
+            tableBodyEl
+              .querySelectorAll(".delete-member-btn")
+              .forEach((button) => {
+                button.addEventListener("click", async (e) => {
+                  const row = e.target.closest("tr");
+                  const memberId = row.dataset.memberId;
+                  const memberName = row.querySelector(
+                    ".member-name-display"
+                  ).textContent;
+
+                  // Modal konfirmasi kustom alih-alih alert/confirm
+                  openModal(`
+                              <h3 class="text-lg md:text-xl font-bold mb-4 text-gray-800">Konfirmasi Hapus</h3>
+                              <p class="mb-6 text-sm md:text-base">Apakah Anda yakin ingin menghapus anggota <strong>${memberName}</strong>?</p>
+                              <div class="flex justify-end gap-4">
+                                  <button id="confirm-delete-cancel" class="bg-gray-300 text-gray-800 py-2 px-4 rounded-md hover:bg-gray-400 text-sm md:text-base">Batal</button>
+                                  <button id="confirm-delete-confirm" class="bg-red-600 text-white py-2 px-4 rounded-md hover:bg-red-700 text-sm md:text-base">Hapus</button>
+                              </div>
+                          `);
+
+                  document
+                    .getElementById("confirm-delete-cancel")
+                    .addEventListener("click", closeModal);
+                  document
+                    .getElementById("confirm-delete-confirm")
+                    .addEventListener("click", async () => {
+                      closeModal();
+                      const payload = { id: memberId };
+                      const result = await postData("deleteMember", payload);
+
+                      if (result) {
+                        // refreshCurrentTab() dipanggil oleh blok finally postData
+                      }
+                    });
+                });
+              });
+          }
+        }
+
+        // --- Logika Navigasi ---
+        const tabButtons = document.querySelectorAll(".tab-button");
+        const appContent = document.getElementById("app-content");
+
+        function activateTab(tabId) {
+          tabButtons.forEach((button) => {
+            // Hapus semua kelas warna dari ikon terlebih dahulu
+            const icon = button.querySelector("i");
+            icon.classList.remove(
+              "text-blue-600",
+              "text-green-600",
+              "text-purple-600",
+              "text-red-600",
+              "text-yellow-600"
+            );
+
+            if (button.id === `nav-${tabId}`) {
+              button.classList.add("active");
+              // Tambahkan warna spesifik untuk ikon tab aktif
+              if (tabId === "dashboard") icon.classList.add("text-blue-600");
+              else if (tabId === "iuran") icon.classList.add("text-green-600");
+              else if (tabId === "pengeluaran")
+                icon.classList.add("text-red-600");
+              else if (tabId === "pengaturan")
+                icon.classList.add("text-purple-600");
+              else if (tabId === "anggota")
+                icon.classList.add("text-yellow-600");
+            } else {
+              button.classList.remove("active");
+              // Atur ikon tab tidak aktif ke warna abu-abu default
+              icon.classList.add("text-gray-600");
+            }
+          });
+
+          // Hapus konten sebelum merender tab baru
+          appContent.innerHTML = "";
+
+          // Render konten berdasarkan tabId
+          switch (tabId) {
+            case "dashboard":
+              renderDashboard();
+              break;
+            case "iuran":
+              renderIuran();
+              break;
+            case "pengeluaran":
+              renderPengeluaran();
+              break;
+            case "pengaturan":
+              renderPengaturan();
+              break;
+            case "anggota":
+              renderAnggota();
+              break;
+            default:
+              renderDashboard(); // Default ke dashboard
+              break;
+          }
+          currentActiveTab = tabId;
+        }
+
+        // --- Fungsi Modal Global ---
+        const globalModalOverlay = document.getElementById(
+          "global-modal-overlay"
+        );
+        const globalModalBody = document.getElementById("global-modal-body");
+
+        function openModal(contentHtml) {
+          globalModalBody.innerHTML = contentHtml;
+          globalModalOverlay.classList.remove("hidden");
+          globalModalOverlay.classList.add("flex");
+        }
+
+        function closeModal() {
+          globalModalOverlay.classList.add("hidden");
+          globalModalOverlay.classList.remove("flex");
+          globalModalBody.innerHTML = ""; // Hapus konten modal
+        }
+
+        // --- Event Listener ---
+        // Render awal dashboard
+        activateTab("dashboard");
+
+        // Tambahkan event listener ke tombol refresh
+        document
+          .getElementById("refresh-button")
+          .addEventListener("click", refreshCurrentTab);
+
+        // Tambahkan event listener ke tombol navigasi
+        tabButtons.forEach((button) => {
+          button.addEventListener("click", () => {
+            const tabId = button.id.replace("nav-", "");
+            activateTab(tabId);
+          });
+        });
+
+        // Tutup tombol modal
+        document
+          .getElementById("global-modal-close")
+          .addEventListener("click", closeModal);
+        // Tutup modal saat mengklik di luar konten
+        document
+          .getElementById("global-modal-overlay")
+          .addEventListener("click", (e) => {
+            if (e.target.id === "global-modal-overlay") {
+              closeModal();
+            }
+          });
+
+        // Pengambilan data latar belakang untuk tab lain setelah dashboard dirender
+        // Pengambilan ini tidak boleh menampilkan spinner
+        setTimeout(async () => {
+          await refreshAllCachedData(); // Panggil fungsi baru untuk refresh semua cache
+          console.log("Pengambilan data latar belakang selesai.");
+        }, 100); // Penundaan kecil untuk memungkinkan rendering dashboard awal dimulai
+      }); // Akhir dari DOMContentLoaded
+    </script>
+  </body>
+</html>

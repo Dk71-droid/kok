@@ -1,0 +1,40 @@
+function setupSpreadsheet() {
+  try {
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    if (!ss) {
+      throw new Error('Spreadsheet tidak ditemukan. Pastikan ID Spreadsheet benar.');
+    }
+
+    const sheetsToCreate = [
+      { name: 'Anggota', headers: ['ID', 'Nama', 'Saldo'] },
+      { name: 'Iuran', headers: ['ID_Anggota', 'Jumlah_Main', 'Status_Bayar', 'Tarif_Saat_Input', 'Tanggal'] },
+      { name: 'Pengeluaran', headers: ['Keterangan', 'Nominal', 'Tanggal'] },
+      { name: 'Tarif', headers: ['Tarif_Main', 'Tanggal'] }
+    ];
+
+    sheetsToCreate.forEach(sheetInfo => {
+      let sheet = ss.getSheetByName(sheetInfo.name);
+      if (!sheet) {
+        // Create the sheet if it doesn't exist
+        sheet = ss.insertSheet(sheetInfo.name);
+        Logger.log(`Sheet "${sheetInfo.name}" berhasil dibuat.`);
+      } else {
+        Logger.log(`Sheet "${sheetInfo.name}" sudah ada.`);
+      }
+
+      // Clear existing content and set headers
+      sheet.clearContents(); // Clears all data, including headers
+      sheet.getRange(1, 1, 1, sheetInfo.headers.length).setValues([sheetInfo.headers]);
+      Logger.log(`Header untuk sheet "${sheetInfo.name}" berhasil diatur.`);
+
+      // Optional: Apply basic formatting (e.g., bold headers)
+      sheet.getRange(1, 1, 1, sheetInfo.headers.length).setFontWeight('bold');
+    });
+
+    SpreadsheetApp.getUi().alert('Setup Spreadsheet Selesai', 'Semua sheet dan header berhasil dibuat atau diperbarui.', SpreadsheetApp.getUi().ButtonSet.OK);
+
+  } catch (error) {
+    Logger.log('Error saat setup spreadsheet: ' + error.message);
+    SpreadsheetApp.getUi().alert('Error', 'Terjadi kesalahan saat setup spreadsheet: ' + error.message, SpreadsheetApp.getUi().ButtonSet.OK);
+  }
+}

@@ -1,0 +1,296 @@
+const SPREADSHEET_ID = '1OTo8qLrfZfK0u7GseyA9BK0kKeAJdcEYnp8heI-xT-8';
+
+// ===== HANDLER GET =====
+function doGet(e) {
+  const action = e.parameter.action;
+  switch (action) {
+    case 'getMembers': return getMembers();
+    case 'getDashboardSummary': return getDashboardSummary();
+    case 'getExpenses': return getExpenses();
+    case 'getCurrentTariff': return getCurrentTariff();
+    default:
+      return ContentService.createTextOutput(JSON.stringify({ error: 'Aksi tidak dikenal: ' + action }))
+        .setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+// ===== HANDLER POST =====
+function doPost(e) {
+  const action = e.parameter.action;
+  const data = JSON.parse(e.parameter.data || '{}');
+  switch (action) {
+    case 'addMember': return addMember(data);
+    case 'updateMember': return updateMember(data);
+    case 'deleteMember': return deleteMember(data);
+    case 'recordPayment': return recordPayment(data);
+    case 'depositBalance': return depositBalance(data);
+    case 'setTariff': return setTariff(data);
+    default:
+      return ContentService.createTextOutput(JSON.stringify({ error: 'Aksi tidak dikenal (POST): ' + action }))
+        .setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+// ===== GET MEMBERS =====
+function getMembers() {
+  const cache = CacheService.getScriptCache();
+  let cachedMembersData = cache.get("allMembersData"); // Coba ambil dari cache
+
+  if (cachedMembersData != null) {
+    Logger.log("Returning members and tariff from cache.");
+    return ContentService.createTextOutput(cachedMembersData)
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+
+  // Jika tidak ada di cache, ambil dari sheet
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sheet = ss.getSheetByName('Anggota');
+  const data = sheet.getDataRange().getValues();
+  const members = [];
+
+  for (let i = 1; i < data.length; i++) {
+    members.push({
+      id: data[i][0],
+      name: data[i][1],
+      balance: data[i][2]
+    });
+  }
+
+  const tariff = getTariffOnly();
+  const result = JSON.stringify({ members, currentTariff: tariff });
+  // Cache selama 5 menit (300 detik)
+  cache.put("allMembersData", result, 300);
+  Logger.log("Returning members and tariff from sheet and caching.");
+  return ContentService.createTextOutput(result)
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+// ===== GET DASHBOARD =====
+function getDashboardSummary() {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const anggota = ss.getSheetByName('Anggota').getDataRange().getValues();
+  const iuran = ss.getSheetByName('Iuran').getDataRange().getValues();
+
+  const unpaidDebts = [];
+  const memberBalances = [];
+  const today = new Date().toISOString().split("T")[0];
+  let lunas = 0;
+  let belumLunas = 0;
+
+  const memberMap = {};
+  for (let i = 1; i < anggota.length; i++) {
+    memberMap[anggota[i][0]] = anggota[i][1];
+    memberBalances.push({ name: anggota[i][1], balance: anggota[i][2] });
+  }
+
+  for (let i = 1; i < iuran.length; i++) {
+    const [id, jumlahMain, statusBayar, tarif, tanggal] = iuran[i];
+    const nominal = jumlahMain * tarif;
+
+    if (tanggal === today) {
+      if (statusBayar === 'sudah_bayar') lunas++;
+      else belumLunas++;
+    }
+
+    if (statusBayar === 'belum_bayar') {
+      unpaidDebts.push({
+        name: memberMap[id] || 'Tidak Diketahui',
+        amount: nominal,
+        date: tanggal
+      });
+    }
+  }
+
+  // Dashboard summary is often dynamic, so not caching it for now.
+  // If performance is still an issue, consider caching with a very short expiry.
+  return ContentService.createTextOutput(JSON.stringify({
+    unpaidDebts,
+    todayPayments: { lunas, belumLunas },
+    memberBalances,
+    currentTariff: getTariffOnly()
+  })).setMimeType(ContentService.MimeType.JSON);
+}
+
+// ===== RECORD PAYMENT =====
+function recordPayment(data) {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sheetIuran = ss.getSheetByName('Iuran');
+  const sheetAnggota = ss.getSheetByName('Anggota');
+  const anggotaData = sheetAnggota.getDataRange().getValues();
+  const idIndexMap = {};
+  for (let i = 1; i < anggotaData.length; i++) {
+    idIndexMap[anggotaData[i][0]] = i + 1;
+  }
+
+  const today = new Date().toISOString().split("T")[0];
+
+  if (data.type === 'individu') {
+    const { memberId, jumlahMain, statusBayar, tariff } = data;
+    sheetIuran.appendRow([memberId, jumlahMain, statusBayar, tariff, today]);
+
+    if (statusBayar === 'sudah_bayar') {
+      const index = idIndexMap[memberId];
+      if (index) {
+        const saldoLama = Number(sheetAnggota.getRange(index, 3).getValue());
+        sheetAnggota.getRange(index, 3).setValue(saldoLama - jumlahMain * tariff);
+      }
+    }
+  } else if (data.type === 'masal') {
+    data.payments.forEach(p => {
+      sheetIuran.appendRow([p.memberId, p.jumlahMain, p.statusBayar, p.tariff, today]);
+
+      if (p.statusBayar === 'sudah_bayar') {
+        const index = idIndexMap[p.memberId];
+        if (index) {
+          const saldoLama = Number(sheetAnggota.getRange(index, 3).getValue());
+          sheetAnggota.getRange(index, 3).setValue(saldoLama - p.jumlahMain * p.tariff);
+        }
+      }
+    });
+  }
+  // Invalidate cache for members and dashboard summary as balances might change
+  const cache = CacheService.getScriptCache();
+  cache.remove("allMembersData");
+  // No explicit cache for dashboard summary, so no need to remove.
+
+  return ContentService.createTextOutput(JSON.stringify({ success: true, message: "Iuran berhasil dicatat." }))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+// ===== GET EXPENSES =====
+function getExpenses() {
+  const cache = CacheService.getScriptCache();
+  let cachedExpenses = cache.get("allExpenses");
+
+  if (cachedExpenses != null) {
+    Logger.log("Returning expenses from cache.");
+    return ContentService.createTextOutput(cachedExpenses)
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const data = ss.getSheetByName('Pengeluaran').getDataRange().getValues();
+  const expenses = data.slice(1).map(r => ({ description: r[0], amount: r[1], date: r[2] }));
+
+  const result = JSON.stringify({ expenses });
+  cache.put("allExpenses", result, 300); // Cache for 5 minutes
+  Logger.log("Returning expenses from sheet and caching.");
+  return ContentService.createTextOutput(result)
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+// ===== RECORD EXPENSE =====
+function recordExpense(data) {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  ss.getSheetByName('Pengeluaran').appendRow([data.description, data.amount, data.date]);
+
+  // Invalidate cache for expenses
+  const cache = CacheService.getScriptCache();
+  cache.remove("allExpenses");
+
+  return ContentService.createTextOutput(JSON.stringify({ success: true, message: 'Pengeluaran dicatat.' }))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+// ===== DEPOSIT =====
+function depositBalance(data) {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sheet = ss.getSheetByName('Anggota');
+  const rows = sheet.getDataRange().getValues();
+
+  for (let i = 1; i < rows.length; i++) {
+    if (rows[i][0] === data.memberId) {
+      const newSaldo = Number(rows[i][2]) + Number(data.amount);
+      sheet.getRange(i + 1, 3).setValue(newSaldo);
+      // Invalidate cache for members as balances change
+      const cache = CacheService.getScriptCache();
+      cache.remove("allMembersData");
+      return ContentService.createTextOutput(JSON.stringify({ success: true, message: "Saldo ditambah." }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+  }
+
+  return ContentService.createTextOutput(JSON.stringify({ error: "Anggota tidak ditemukan." }))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+// ===== MEMBER MANAGEMENT =====
+function addMember(data) {
+  const id = Utilities.getUuid();
+  SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName('Anggota').appendRow([id, data.name, 0]);
+  // Invalidate cache for members
+  const cache = CacheService.getScriptCache();
+  cache.remove("allMembersData");
+  return ContentService.createTextOutput(JSON.stringify({ success: true, message: "Anggota ditambahkan." }))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+function updateMember(data) {
+  const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName('Anggota');
+  const rows = sheet.getDataRange().getValues();
+  for (let i = 1; i < rows.length; i++) {
+    if (rows[i][0] === data.id) {
+      sheet.getRange(i + 1, 2).setValue(data.name);
+      // Invalidate cache for members
+      const cache = CacheService.getScriptCache();
+      cache.remove("allMembersData");
+      return ContentService.createTextOutput(JSON.stringify({ success: true, message: "Anggota diperbarui." }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+  }
+  return ContentService.createTextOutput(JSON.stringify({ error: "Anggota tidak ditemukan." }))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+function deleteMember(data) {
+  const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName('Anggota');
+  const rows = sheet.getDataRange().getValues();
+  for (let i = 1; i < rows.length; i++) {
+    if (rows[i][0] === data.id) {
+      sheet.deleteRow(i + 1);
+      // Invalidate cache for members
+      const cache = CacheService.getScriptCache();
+      cache.remove("allMembersData");
+      return ContentService.createTextOutput(JSON.stringify({ success: true, message: "Anggota dihapus." }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+  }
+  return ContentService.createTextOutput(JSON.stringify({ error: "Anggota tidak ditemukan." }))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+// ===== TARIFF =====
+function setTariff(data) {
+  SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName('Tarif')
+    .appendRow([data.tariff, data.date]);
+  // Invalidate cache for current tariff and members (as tariff affects member calculations)
+  const cache = CacheService.getScriptCache();
+  cache.remove("currentTariffData");
+  cache.remove("allMembersData"); // Tariff changes might affect member balance display on dashboard
+  return ContentService.createTextOutput(JSON.stringify({ success: true, message: "Tarif disimpan." }))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+function getCurrentTariff() {
+  const cache = CacheService.getScriptCache();
+  let cachedTariffData = cache.get("currentTariffData");
+
+  if (cachedTariffData != null) {
+    Logger.log("Returning current tariff from cache.");
+    return ContentService.createTextOutput(cachedTariffData)
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+
+  const tariff = getTariffOnly();
+  const result = JSON.stringify({ tariff });
+  cache.put("currentTariffData", result, 300); // Cache for 5 minutes
+  Logger.log("Returning current tariff from sheet and caching.");
+  return ContentService.createTextOutput(result)
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+function getTariffOnly() {
+  const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName('Tarif');
+  const lastRow = sheet.getLastRow();
+  return lastRow > 1 ? Number(sheet.getRange(lastRow, 1).getValue()) : 0;
+}
