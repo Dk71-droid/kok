@@ -132,18 +132,18 @@
           <span class="text-xs font-semibold">Pengeluaran</span>
         </button>
         <button
-          id="nav-pengaturan"
-          class="tab-button flex flex-col items-center justify-center p-2 text-gray-600 hover:text-blue-600"
-        >
-          <i class="fas fa-cog text-xl mb-1"></i>
-          <span class="text-xs font-semibold">Pengaturan</span>
-        </button>
-        <button
           id="nav-anggota"
           class="tab-button flex flex-col items-center justify-center p-2 text-gray-600 hover:text-blue-600"
         >
           <i class="fas fa-users text-xl mb-1"></i>
           <span class="text-xs font-semibold">Anggota</span>
+        </button>
+        <button
+          id="nav-pengaturan"
+          class="tab-button flex flex-col items-center justify-center p-2 text-gray-600 hover:text-blue-600"
+        >
+          <i class="fas fa-cog text-xl mb-1"></i>
+          <span class="text-xs font-semibold">Pengaturan</span>
         </button>
       </div>
     </nav>
@@ -177,6 +177,36 @@
       <!-- Pesan akan ditampilkan di sini -->
     </div>
 
+    <!-- Loading Overlay untuk aksi spesifik -->
+    <div
+      id="action-loading-overlay"
+      class="fixed inset-0 bg-gray-800 bg-opacity-50 flex items-center justify-center z-[1000] hidden"
+    >
+      <div class="flex items-center text-white text-lg font-semibold">
+        <svg
+          class="animate-spin -ml-1 mr-3 h-8 w-8 text-white"
+          xmlns="http://www.w3.org/2000/svg"
+          fill="none"
+          viewBox="0 0 24 24"
+        >
+          <circle
+            class="opacity-25"
+            cx="12"
+            cy="12"
+            r="10"
+            stroke="currentColor"
+            stroke-width="4"
+          ></circle>
+          <path
+            class="opacity-75"
+            fill="currentColor"
+            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+          ></path>
+        </svg>
+        <span>Memproses...</span>
+      </div>
+    </div>
+
     <script>
       // Bungkus seluruh logika aplikasi di dalam DOMContentLoaded
       document.addEventListener("DOMContentLoaded", () => {
@@ -189,7 +219,7 @@
         // --- Status Global ---
         let members = [];
         let currentTariff = 0;
-        let unpaidDebts = [];
+        let unpaidDebts = []; // Ini akan berisi data saldo minus anggota
         let memberBalances = [];
         let currentActiveTab = "dashboard";
 
@@ -222,7 +252,7 @@
           }, 3000); // Sembunyikan setelah 3 detik
         }
 
-        // Fungsi untuk mengaktifkan/menonaktifkan spinner refresh
+        // Fungsi untuk mengaktifkan/menonaktifkan spinner refresh di header
         function toggleRefreshSpinner(show) {
           const refreshButton = document.getElementById("refresh-button");
           const spinnerIcon = refreshButton.querySelector("i");
@@ -230,6 +260,16 @@
             spinnerIcon.classList.add("fa-spin");
           } else {
             spinnerIcon.classList.remove("fa-spin");
+          }
+        }
+
+        // Fungsi untuk mengaktifkan/menonaktifkan loading overlay global
+        function toggleActionLoadingOverlay(show) {
+          const overlay = document.getElementById("action-loading-overlay");
+          if (show) {
+            overlay.classList.remove("hidden");
+          } else {
+            overlay.classList.add("hidden");
           }
         }
 
@@ -270,7 +310,7 @@
 
         // --- Fungsi untuk Mengirim Data ke Google Apps Script ---
         async function postData(action, payload) {
-          toggleRefreshSpinner(true); // Selalu tampilkan spinner untuk permintaan POST
+          toggleActionLoadingOverlay(true); // Tampilkan loading overlay untuk aksi POST
           try {
             // Mengubah payload menjadi format x-www-form-urlencoded
             const formData = new URLSearchParams();
@@ -303,10 +343,16 @@
             showMessageBox(`Gagal menyimpan data: ${error.message}`, "error");
             return null;
           } finally {
-            toggleRefreshSpinner(false);
-            // Setelah POST apapun, segarkan data tab saat ini
+            // Setelah POST apapun, segarkan semua data dan kemudian refresh tab saat ini
+            cachedData.dashboard = null; // Hapus cache dashboard secara eksplisit
+            cachedData.iuran = null;
+            cachedData.pengeluaran = null;
+            cachedData.pengaturan = null;
+            cachedData.anggota = null;
+            await new Promise((resolve) => setTimeout(resolve, 500)); // Tambahkan penundaan kecil
             await refreshAllCachedData(); // Panggil fungsi baru untuk refresh semua cache
             refreshCurrentTab(); // Kemudian refresh tab yang aktif
+            toggleActionLoadingOverlay(false); // Sembunyikan loading overlay setelah semua data diperbarui dan tab dirender
           }
         }
 
@@ -323,7 +369,7 @@
           );
           if (dashboardData) {
             cachedData.dashboard = dashboardData;
-            unpaidDebts = dashboardData.unpaidDebts || [];
+            unpaidDebts = dashboardData.unpaidDebts || []; // Ini akan berisi data saldo minus anggota
             memberBalances = dashboardData.memberBalances || [];
             currentTariff = dashboardData.currentTariff || 0;
           }
@@ -387,7 +433,7 @@
                           </div>
                           <h3 class="text-lg font-semibold text-gray-700 mb-2">Jumlah Belum Bayar</h3>
                           <p class="text-4xl font-extrabold text-red-700">Rp 0</p>
-                          <p class="text-sm text-gray-500 mt-2">Ketuk untuk detail iuran</p>
+                          <p class="text-sm text-gray-500 mt-2">Ketuk untuk detail saldo minus</p>
                       </div>
 
                       <!-- Kartu Total Saldo Kas -->
@@ -432,20 +478,29 @@
           }
 
           if (dashboardData) {
-            unpaidDebts = dashboardData.unpaidDebts || [];
+            unpaidDebts = dashboardData.unpaidDebts || []; // Ini sekarang berisi anggota dengan saldo minus
             memberBalances = dashboardData.memberBalances || [];
             currentTariff = dashboardData.currentTariff || 0; // Pastikan tarif tersedia secara global
 
-            // Perbarui Kartu Jumlah Belum Bayar
-            const totalUnpaid = unpaidDebts.reduce(
-              (sum, debt) => sum + debt.amount,
+            // Perbarui Kartu Jumlah Belum Bayar (berdasarkan total saldo minus)
+            const totalNegativeBalance = memberBalances.reduce(
+              (sum, member) => {
+                return (
+                  sum + (member.balance < 0 ? Math.abs(member.balance) : 0)
+                );
+              },
               0
             );
             document
               .getElementById("card-belum-bayar")
+              .querySelector("h3").textContent = `Jumlah Belum Bayar`; // Mengembalikan nama kartu
+            document
+              .getElementById("card-belum-bayar")
               .querySelector(
                 "p"
-              ).textContent = `Rp ${totalUnpaid.toLocaleString("id-ID")}`;
+              ).textContent = `Rp ${totalNegativeBalance.toLocaleString(
+              "id-ID"
+            )}`;
 
             // Hitung dan perbarui Kartu Total Saldo Kas: Hanya jumlahkan saldo positif
             const totalCashBalance = memberBalances.reduce((sum, member) => {
@@ -480,24 +535,35 @@
             document
               .getElementById("card-belum-bayar")
               .addEventListener("click", () => {
-                if (unpaidDebts.length === 0) {
-                  showMessageBox("Tidak ada iuran yang belum dibayar.", "info");
+                // Filter hanya yang memiliki saldo minus (jumlah > 0)
+                const membersWithNegativeBalance = memberBalances
+                  .filter((m) => m.balance < 0)
+                  .map((m) => ({
+                    memberId: m.id,
+                    name: m.name,
+                    amount: Math.abs(m.balance), // Ambil nilai absolut saldo minus
+                  }));
+
+                if (membersWithNegativeBalance.length === 0) {
+                  showMessageBox(
+                    "Tidak ada anggota dengan saldo minus.",
+                    "info"
+                  );
                   return;
                 }
                 let debtListHtml = `
-                        <h3 class="text-lg md:text-xl font-bold mb-4 text-gray-800">Detail Iuran Belum Bayar</h3>
+                        <h3 class="text-lg md:text-xl font-bold mb-4 text-gray-800">Detail Saldo Minus Anggota</h3>
                         <div class="max-h-80 overflow-y-auto">
                             <table class="min-w-full divide-y divide-gray-200">
                                 <thead class="bg-gray-50">
                                     <tr>
                                         <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Nama</th>
-                                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Nominal</th>
-                                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Tanggal</th>
+                                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Saldo Minus</th>
                                         <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Aksi</th>
                                     </tr>
                                 </thead>
                                 <tbody class="bg-white divide-y divide-gray-200">
-                                    ${unpaidDebts
+                                    ${membersWithNegativeBalance
                                       .map(
                                         (debt) => `
                                         <tr data-member-id="${
@@ -511,9 +577,6 @@
                                             <td class="px-4 py-2 whitespace-nowrap text-sm text-red-600 font-semibold">Rp ${debt.amount.toLocaleString(
                                               "id-ID"
                                             )}</td>
-                                            <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-700">${
-                                              debt.date
-                                            }</td>
                                             <td class="px-4 py-2 whitespace-nowrap text-sm">
                                                 <button class="pay-debt-btn bg-blue-500 text-white px-3 py-1 rounded-md text-xs hover:bg-blue-600 transition-colors">Bayar</button>
                                             </td>
@@ -532,19 +595,19 @@
                   button.addEventListener("click", (e) => {
                     const row = e.target.closest("tr");
                     const memberId = row.dataset.memberId;
-                    const debtAmount = parseFloat(row.dataset.debtAmount);
+                    const debtAmount = parseFloat(row.dataset.debtAmount); // Ini adalah saldo minus saat ini
                     const memberName = row.dataset.memberName;
 
                     // Buka modal baru untuk pembayaran utang
                     openModal(`
-                            <h3 class="text-lg md:text-xl font-bold mb-4 text-gray-800">Bayar Utang</h3>
+                            <h3 class="text-lg md:text-xl font-bold mb-4 text-gray-800">Bayar Saldo Minus</h3>
                             <form id="form-pay-debt" class="space-y-4">
                                 <div>
                                     <label class="block text-sm font-medium text-gray-700 mb-2">Anggota</label>
                                     <input type="text" value="${memberName}" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm bg-gray-100 cursor-not-allowed text-sm md:text-base" readonly>
                                 </div>
                                 <div>
-                                    <label class="block text-sm font-medium text-gray-700 mb-2">Jumlah Utang</label>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">Jumlah Saldo Minus</label>
                                     <input type="text" value="Rp ${debtAmount.toLocaleString(
                                       "id-ID"
                                     )}" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm bg-gray-100 cursor-not-allowed text-sm md:text-base" readonly>
@@ -578,13 +641,9 @@
                           );
                           return;
                         }
-                        if (paymentAmount > debtAmount) {
-                          showMessageBox(
-                            "Nominal pembayaran tidak boleh melebihi jumlah utang.",
-                            "error"
-                          );
-                          return;
-                        }
+                        // Tidak perlu validasi paymentAmount > debtAmount di sini,
+                        // karena depositBalance di GAS akan menangani penambahan saldo secara fleksibel.
+                        // Jika pembayaran melebihi saldo minus, saldo akan menjadi positif.
 
                         closeModal(); // Tutup modal pembayaran
                         const payload = {
@@ -596,8 +655,7 @@
                           payload
                         ); // Gunakan depositBalance untuk mengurangi utang
                         if (result) {
-                          // Refresh dashboard untuk menampilkan perubahan
-                          refreshCurrentTab();
+                          // refreshCurrentTab() dipanggil oleh blok finally postData
                         }
                       });
                   });
@@ -674,6 +732,7 @@
           document.getElementById("tanggal-iuran").value = today;
 
           let membersData;
+          // Hanya ambil data jika belum ada di cache atau dipaksa refresh
           if (forceRefresh || !cachedData.iuran) {
             membersData = await fetchData("getMembers", {}, true);
             if (membersData) cachedData.iuran = membersData;
@@ -913,6 +972,7 @@
           document.getElementById("tanggal-pengeluaran").value = today;
 
           let expensesData;
+          // Hanya ambil data jika belum ada di cache atau dipaksa refresh
           if (forceRefresh || !cachedData.pengeluaran) {
             expensesData = await fetchData("getExpenses", {}, true);
             if (expensesData) cachedData.pengeluaran = expensesData;
@@ -1013,6 +1073,7 @@
               `;
 
           let tariffData;
+          // Hanya ambil data jika belum ada di cache atau dipaksa refresh
           if (forceRefresh || !cachedData.pengaturan) {
             tariffData = await fetchData("getCurrentTariff", {}, true);
             if (tariffData) cachedData.pengaturan = tariffData;
@@ -1101,6 +1162,7 @@
               `;
 
           let membersData;
+          // Hanya ambil data jika belum ada di cache atau dipaksa refresh
           if (forceRefresh || !cachedData.anggota) {
             membersData = await fetchData("getMembers", {}, true);
             if (membersData) cachedData.anggota = membersData;
@@ -1286,10 +1348,10 @@
               else if (tabId === "iuran") icon.classList.add("text-green-600");
               else if (tabId === "pengeluaran")
                 icon.classList.add("text-red-600");
-              else if (tabId === "pengaturan")
-                icon.classList.add("text-purple-600");
               else if (tabId === "anggota")
                 icon.classList.add("text-yellow-600");
+              else if (tabId === "pengaturan")
+                icon.classList.add("text-purple-600"); // Pengaturan sekarang di posisi ke-5
             } else {
               button.classList.remove("active");
               // Atur ikon tab tidak aktif ke warna abu-abu default
@@ -1311,11 +1373,11 @@
             case "pengeluaran":
               renderPengeluaran();
               break;
-            case "pengaturan":
-              renderPengaturan();
-              break;
             case "anggota":
               renderAnggota();
+              break;
+            case "pengaturan": // Urutan baru
+              renderPengaturan();
               break;
             default:
               renderDashboard(); // Default ke dashboard
@@ -1374,9 +1436,32 @@
 
         // Pengambilan data latar belakang untuk tab lain setelah dashboard dirender
         // Pengambilan ini tidak boleh menampilkan spinner
+        // PENTING: Hanya ambil data dashboard dan anggota di awal
         setTimeout(async () => {
-          await refreshAllCachedData(); // Panggil fungsi baru untuk refresh semua cache
-          console.log("Pengambilan data latar belakang selesai.");
+          console.log(
+            "Memulai pengambilan data awal untuk Dashboard dan Anggota..."
+          );
+          const dashboardData = await fetchData(
+            "getDashboardSummary",
+            {},
+            false
+          );
+          if (dashboardData) {
+            cachedData.dashboard = dashboardData;
+            unpaidDebts = dashboardData.unpaidDebts || [];
+            memberBalances = dashboardData.memberBalances || [];
+            currentTariff = dashboardData.currentTariff || 0;
+          }
+
+          const membersData = await fetchData("getMembers", {}, false);
+          if (membersData) {
+            cachedData.iuran = membersData; // Data anggota juga digunakan oleh tab iuran
+            cachedData.anggota = membersData;
+            members = membersData.members;
+            currentTariff = membersData.currentTariff;
+          }
+          console.log("Pengambilan data awal selesai.");
+          refreshCurrentTab(); // Pastikan dashboard dirender ulang dengan data awal yang sudah di-cache
         }, 100); // Penundaan kecil untuk memungkinkan rendering dashboard awal dimulai
       }); // Akhir dari DOMContentLoaded
     </script>
