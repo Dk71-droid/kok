@@ -130,13 +130,13 @@ function getMembers() {
 function getDashboardSummary() {
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   const anggotaSheet = ss.getSheetByName('Anggota');
-  const iuranSheet = ss.getSheetByName('Iuran');
+  // const iuranSheet = ss.getSheetByName('Iuran'); // Tidak lagi dibutuhkan untuk menghitung utang
 
   const membersData = anggotaSheet.getDataRange().getValues();
-  const iuranData = iuranSheet.getDataRange().getValues();
+  // const iuranData = iuranSheet.getDataRange().getValues(); // Tidak lagi dibutuhkan
 
   const members = [];
-  const memberMap = {};
+  // const memberMap = {}; // Tidak lagi dibutuhkan
   for (let i = 1; i < membersData.length; i++) {
     const member = {
       id: membersData[i][0],
@@ -144,10 +144,10 @@ function getDashboardSummary() {
       balance: membersData[i][2]
     };
     members.push(member);
-    memberMap[member.id] = member.name;
+    // memberMap[member.id] = member.name; // Tidak lagi dibutuhkan
   }
 
-  const unpaidDebts = []; // Ini akan berisi detail utang per anggota (bukan per iuran)
+  const unpaidDebts = []; // Ini akan berisi detail utang per anggota (berdasarkan saldo negatif)
   let totalUnpaidAmount = 0;
   let totalCashBalance = 0;
 
@@ -157,47 +157,26 @@ function getDashboardSummary() {
     totalCashBalance = kasKlubMember.balance;
   }
 
-  // Menghitung iuran belum dibayar dan mengagregasi per anggota
-  const iuranHeaders = iuranData.length > 0 ? iuranData[0] : [];
-  const ID_ANGGOTA_COL_IURAN = iuranHeaders.indexOf('ID_Anggota');
-  const JUMLAH_MAIN_COL_IURAN = iuranHeaders.indexOf('Jumlah_Main');
-  const STATUS_BAYAR_COL_IURAN = iuranHeaders.indexOf('Status_Bayar');
-  const TARIF_SAAT_INPUT_COL_IURAN = iuranHeaders.indexOf('Tarif_Saat_Input');
-
-  // Menggunakan map untuk mengagregasi utang per anggota
-  const aggregatedUnpaidDebtsMap = {};
-
-  for (let i = 1; i < iuranData.length; i++) {
-    const row = iuranData[i];
-    const id = row[ID_ANGGOTA_COL_IURAN];
-    const jumlahMain = row[JUMLAH_MAIN_COL_IURAN];
-    const statusBayar = row[STATUS_BAYAR_COL_IURAN];
-    const tarifSaatInput = row[TARIF_SAAT_INPUT_COL_IURAN];
-
-    if (id !== CASH_FUND_MEMBER_ID && statusBayar === 'belum_bayar') {
-      const nominal = jumlahMain * tarifSaatInput;
-      
-      if (!aggregatedUnpaidDebtsMap[id]) {
-        aggregatedUnpaidDebtsMap[id] = {
-          memberId: id,
-          name: memberMap[id] || 'Tidak Diketahui',
-          amount: 0 // Total utang untuk anggota ini
-        };
-      }
-      aggregatedUnpaidDebtsMap[id].amount += nominal;
-      totalUnpaidAmount += nominal;
+  // Menghitung utang belum dibayar dari saldo anggota
+  members.forEach(member => {
+    if (member.id !== CASH_FUND_MEMBER_ID && member.balance < 0) {
+      unpaidDebts.push({
+        memberId: member.id,
+        name: member.name,
+        amount: Math.abs(member.balance) // Utang adalah nilai absolut dari saldo negatif
+      });
+      totalUnpaidAmount += Math.abs(member.balance);
     }
-  }
+  });
 
-  // Mengkonversi map menjadi array untuk dikirim ke frontend
   const currentTariff = getTariffOnly();
 
   const dashboardSummary = {
-    unpaidDebts: Object.values(aggregatedUnpaidDebtsMap), // Data utang yang sudah diagregasi
-    totalUnpaidAmount,  // Total akumulasi iuran belum dibayar (untuk kartu)
-    totalCashBalance,   // Total saldo kas klub (untuk kartu)
+    unpaidDebts: unpaidDebts,  // Data utang yang sudah diagregasi dari saldo anggota
+    totalUnpaidAmount: totalUnpaidAmount,  // Total akumulasi utang (dari saldo negatif)
+    totalCashBalance: totalCashBalance,   // Total saldo kas klub
     memberBalances: members, // Saldo semua anggota (untuk tabel)
-    currentTariff
+    currentTariff: currentTariff
   };
 
   writeAppDataCache(APP_DATA_CELLS.DASHBOARD, dashboardSummary); // Memperbarui cache
@@ -207,6 +186,13 @@ function getDashboardSummary() {
 }
 
 // ===== RECORD PAYMENT (Memperbarui sheet Iuran & Anggota) =====
+/**
+ * Mencatat pembayaran iuran.
+ * Saldo anggota selalu dikurangi dengan nominal iuran penuh.
+ * Kas Klub hanya akan bertambah jika pembayaran dilakukan dengan 'cash' (uang tunai baru masuk).
+ * Jika paymentMethod adalah 'balance', Kas Klub tidak terpengaruh karena dana sudah ada di sistem.
+ * @param {object} data Objek yang berisi memberId, jumlahMain, statusBayar, tariff, dan paymentMethod.
+ */
 function recordPayment(data) {
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   const sheetIuran = ss.getSheetByName('Iuran');
@@ -224,44 +210,33 @@ function recordPayment(data) {
 
   const today = new Date().toISOString().split("T")[0];
 
-  const { memberId, jumlahMain, statusBayar, tariff } = data;
+  const { memberId, jumlahMain, statusBayar, tariff, paymentMethod } = data; // Get paymentMethod
   const nominalIuran = jumlahMain * tariff;
-
-  // Memperbarui sheet Iuran
-  sheetIuran.appendRow([memberId, jumlahMain, statusBayar, tariff, today]);
 
   // Memperbarui saldo Anggota
   const memberRowIndex = idIndexMap[memberId];
   if (memberRowIndex) {
     const currentBalance = Number(sheetAnggota.getRange(memberRowIndex, SALDO_COL_ANGGOTA + 1).getValue());
+    
+    // Saldo anggota selalu dikurangi dengan nominal iuran penuh
+    sheetAnggota.getRange(memberRowIndex, SALDO_COL_ANGGOTA + 1).setValue(currentBalance - nominalIuran);
 
-    if (statusBayar === 'belum_bayar') {
-      // Jika status 'belum_bayar', anggota menanggung utang
-      sheetAnggota.getRange(memberRowIndex, SALDO_COL_ANGGOTA + 1).setValue(currentBalance - nominalIuran);
-    } else { // statusBayar === 'sudah_bayar'
-      // Jika status 'sudah_bayar', berarti pembayaran telah dilakukan.
-      // Jika anggota memiliki saldo positif (prabayar), kurangi dari saldo tersebut.
-      // Jika anggota memiliki saldo nol/negatif, pembayaran ini adalah untuk iuran,
-      // jadi saldo anggota tidak perlu diubah di sini (bukan utang baru atau penggunaan prabayar).
-      // Dana sudah masuk ke Kas Klub (akan ditangani di bawah).
-      if (currentBalance > 0) { // Hanya kurangi jika mereka memiliki prabayar
-        sheetAnggota.getRange(memberRowIndex, SALDO_COL_ANGGOTA + 1).setValue(currentBalance - nominalIuran);
+    // HANYA tambahkan ke Kas Klub jika paymentMethod adalah 'cash'
+    if (paymentMethod === 'cash') {
+      const kasKlubRowIndex = idIndexMap[CASH_FUND_MEMBER_ID];
+      if (kasKlubRowIndex) {
+        const currentKasKlubBalance = Number(sheetAnggota.getRange(kasKlubRowIndex, SALDO_COL_ANGGOTA + 1).getValue());
+        sheetAnggota.getRange(kasKlubRowIndex, SALDO_COL_ANGGOTA + 1).setValue(currentKasKlubBalance + nominalIuran);
+      } else {
+        Logger.log(`Warning: Anggota dengan ID ${CASH_FUND_MEMBER_ID} tidak ditemukan. Dana kas tidak diperbarui untuk pembayaran 'cash'.`);
       }
     }
   } else {
     Logger.log(`Error: Anggota dengan ID ${memberId} tidak ditemukan untuk update saldo.`);
   }
 
-  // Jika pembayaran adalah 'sudah_bayar', itu berarti kas diterima, jadi perbarui saldo Kas Klub
-  if (statusBayar === 'sudah_bayar') {
-    const kasKlubRowIndex = idIndexMap[CASH_FUND_MEMBER_ID];
-    if (kasKlubRowIndex) {
-      const currentKasKlubBalance = Number(sheetAnggota.getRange(kasKlubRowIndex, SALDO_COL_ANGGOTA + 1).getValue());
-      sheetAnggota.getRange(kasKlubRowIndex, SALDO_COL_ANGGOTA + 1).setValue(currentKasKlubBalance + nominalIuran);
-    } else {
-      Logger.log(`Warning: Anggota dengan ID ${CASH_FUND_MEMBER_ID} tidak ditemukan. Dana kas tidak diperbarui untuk pembayaran.`);
-    }
-  }
+  // Memperbarui sheet Iuran dengan status bayar yang dikirim dari frontend
+  sheetIuran.appendRow([memberId, jumlahMain, statusBayar, tariff, today]);
 
   return ContentService.createTextOutput(JSON.stringify({ success: true, message: "Iuran berhasil dicatat." }))
     .setMimeType(ContentService.MimeType.JSON);
@@ -319,6 +294,12 @@ function recordExpense(data) {
 
 
 // ===== DEPOSIT (Memperbarui sheet Anggota) =====
+/**
+ * Mencatat setoran saldo oleh anggota.
+ * Setoran ini diasumsikan sebagai uang tunai baru yang masuk ke sistem.
+ * Saldo anggota yang menyetor akan bertambah, dan saldo Kas Klub juga akan bertambah.
+ * @param {object} data Objek yang berisi memberId dan amount.
+ */
 function depositBalance(data) {
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   const sheetAnggota = ss.getSheetByName('Anggota');
@@ -346,7 +327,8 @@ function depositBalance(data) {
   const currentMemberBalance = Number(sheetAnggota.getRange(memberRowIndex, SALDO_COL_ANGGOTA + 1).getValue());
   sheetAnggota.getRange(memberRowIndex, SALDO_COL_ANGGOTA + 1).setValue(currentMemberBalance + Number(data.amount));
 
-  // LOGIKA BARU: Juga memperbarui saldo Kas Klub jika anggota biasa melakukan setoran
+  // LOGIKA: Juga memperbarui saldo Kas Klub jika anggota biasa melakukan setoran
+  // Ini karena setoran saldo diasumsikan sebagai uang tunai fisik yang masuk ke kas klub.
   if (data.memberId !== CASH_FUND_MEMBER_ID) {
     const kasKlubRowIndex = anggotaData.findIndex(row => row[ID_ANGGOTA_COL_ANGGOTA] === CASH_FUND_MEMBER_ID) + 1;
     if (kasKlubRowIndex > 0) {
@@ -542,7 +524,7 @@ function _clearAndSetupSheetsInternal() {
     anggotaSheet.appendRow([CASH_FUND_MEMBER_ID, 'Kas Klub', 0]);
   } else {
     // Jika Kas Klub ada, pastikan saldonya 0 jika kita melakukan reset penuh
-    const kasKlubRowIndex = anggotaData.findIndex(row => row[ID_ANGGOTA_COL_ANGGOTA_SETUP] === CASH_FUND_MEMBER_ID) + 1;
+    const kasKlubRowIndex = anggotaData.findIndex(row => row[ID_COL_ANGGOTA_SETUP] === CASH_FUND_MEMBER_ID) + 1;
     if (kasKlubRowIndex > 0) {
       anggotaSheet.getRange(kasKlubRowIndex, anggotaHeaders.indexOf('Saldo') + 1).setValue(0);
     }
@@ -594,6 +576,7 @@ function resetData(data) {
     } else if (resetType === 'monthAgo' || resetType === 'dateRange') {
       const iuranSheet = ss.getSheetByName('Iuran');
       const pengeluaranSheet = ss.getSheetByName('Pengeluaran');
+      const anggotaSheet = ss.getSheetByName('Anggota'); // Perlu untuk reset saldo anggota
 
       let startDate = null;
       let endDate = new Date(); // Tanggal akhir default hari ini
@@ -639,7 +622,24 @@ function resetData(data) {
       }
       rowsToDeletePengeluaran.forEach(rowIndex => pengeluaranSheet.deleteRow(rowIndex));
 
-      message = `Data transaksi dari ${startDate.toLocaleDateString()} hingga ${endDate.toLocaleDateString()} berhasil direset. Perhatian: Saldo anggota mungkin perlu disesuaikan secara manual karena riwayat transaksi yang dihapus.`;
+      // Setelah menghapus transaksi, reset semua saldo anggota (kecuali Kas Klub) menjadi 0
+      // Ini adalah pendekatan yang lebih aman untuk konsistensi data setelah reset sebagian transaksi.
+      const anggotaData = anggotaSheet.getDataRange().getValues();
+      const anggotaHeaders = anggotaData.length > 0 ? anggotaData[0] : [];
+      const ID_COL_ANGGOTA = anggotaHeaders.indexOf('ID');
+      const SALDO_COL_ANGGOTA = anggotaHeaders.indexOf('Saldo');
+
+      for (let i = 1; i < anggotaData.length; i++) {
+        const memberId = anggotaData[i][ID_COL_ANGGOTA];
+        if (memberId !== CASH_FUND_MEMBER_ID) {
+          anggotaSheet.getRange(i + 1, SALDO_COL_ANGGOTA + 1).setValue(0); // Reset saldo anggota ke 0
+        } else {
+          // Pastikan saldo Kas Klub juga direset ke 0 jika ini adalah reset data transaksi
+          anggotaSheet.getRange(i + 1, SALDO_COL_ANGGOTA + 1).setValue(0);
+        }
+      }
+
+      message = `Data transaksi dari ${startDate.toLocaleDateString()} hingga ${endDate.toLocaleDateString()} berhasil direset. Saldo anggota telah direset ke 0. Harap sesuaikan saldo secara manual jika diperlukan.`;
     } else {
       throw new Error("Tipe reset tidak valid.");
     }

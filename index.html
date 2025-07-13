@@ -815,7 +815,7 @@
 
           if (membersData) {
             members = membersData.members || [];
-            currentTariff = membersData.currentTariff || 0;
+            // currentTariff = membersData.currentTariff || 0; // Hapus baris ini, tarif diambil dari tariffResult
           } else {
             members = [];
           }
@@ -1139,7 +1139,14 @@
           forceFetch = false,
           showSpinner = true
         ) {
+          console.log(
+            `[renderPengaturan] Memulai, forceFetch: ${forceFetch}, showSpinner: ${showSpinner}`
+          );
           const content = document.getElementById("tab-content-wrapper"); // Target pembungkus konten
+          if (!content) {
+            console.error("tab-content-wrapper not found for Pengaturan!");
+            return;
+          }
           content.innerHTML = `
                   <div class="bg-white rounded-xl shadow-lg p-4 md:p-6 mb-6">
                       <h3 class="text-sm font-medium text-gray-700 mb-4">Atur Tarif Main</h3>
@@ -1173,34 +1180,71 @@
 
           // Ambil data dari cache frontend atau dari server jika forceFetch atau tidak ada di cache
           let tariffData = cachedData.pengaturan;
+          console.log(
+            "[renderPengaturan] Initial cachedData.pengaturan:",
+            cachedData.pengaturan
+          );
+
           if (forceFetch || !tariffData) {
+            console.log("[renderPengaturan] Fetching new tariff data...");
             tariffData = await fetchData("getCurrentTariff", {}, showSpinner);
+            console.log("[renderPengaturan] Fetched tariffData:", tariffData);
+          } else {
+            console.log(
+              "[renderPengaturan] Using tariff data from cache:",
+              tariffData
+            );
           }
+
+          const nominalTarifEl = document.getElementById("nominal-tarif");
+          const currentTariffDisplayEl = document.getElementById(
+            "current-tariff-display"
+          );
 
           if (tariffData && tariffData.tariff !== undefined) {
             currentTariff = tariffData.tariff;
-            document.getElementById("nominal-tarif").value = currentTariff;
-            document.getElementById(
-              "current-tariff-display"
-            ).textContent = `Tarif saat ini: Rp ${currentTariff.toLocaleString(
-              "id-ID"
-            )}`;
+            console.log(
+              "[renderPengaturan] currentTariff updated to:",
+              currentTariff
+            );
+            if (nominalTarifEl) nominalTarifEl.value = currentTariff;
+            if (currentTariffDisplayEl) {
+              currentTariffDisplayEl.textContent = `Tarif saat ini: Rp ${currentTariff.toLocaleString(
+                "id-ID"
+              )}`;
+            }
           } else {
-            document.getElementById(
-              "current-tariff-display"
-            ).textContent = `Tarif saat ini: Belum diatur`;
+            console.log(
+              "[renderPengaturan] Tariff data is undefined or null, setting default display."
+            );
+            if (currentTariffDisplayEl) {
+              currentTariffDisplayEl.textContent = `Tarif saat ini: Belum diatur`;
+            }
           }
 
-          document
-            .getElementById("form-atur-tarif")
-            .addEventListener("submit", async (e) => {
+          const formAturTarif = document.getElementById("form-atur-tarif");
+          if (formAturTarif) {
+            // Hapus listener lama
+            const oldFormAturTarifListener = formAturTarif._eventListener;
+            if (oldFormAturTarifListener) {
+              formAturTarif.removeEventListener(
+                "submit",
+                oldFormAturTarifListener
+              );
+            }
+
+            const newFormAturTarifListener = async (e) => {
               e.preventDefault();
+              console.log("[renderPengaturan] Form atur tarif disubmit.");
               const nominalTarif = parseInt(
                 document.getElementById("nominal-tarif").value
               );
 
               if (isNaN(nominalTarif) || nominalTarif < 0) {
                 showMessageBox("Nominal tarif tidak valid.", "error");
+                console.warn(
+                  "[renderPengaturan] Validasi nominal tarif gagal."
+                );
                 return;
               }
 
@@ -1208,19 +1252,47 @@
                 tariff: nominalTarif,
                 date: new Date().toISOString().split("T")[0],
               };
-              await postData("setTariff", payload);
+              console.log(
+                "[renderPengaturan] Mengirim setTariff payload:",
+                payload
+              );
+              const postResult = await postData("setTariff", payload);
 
-              currentTariff = nominalTarif;
-              document.getElementById(
-                "current-tariff-display"
-              ).textContent = `Tarif saat ini: Rp ${currentTariff.toLocaleString(
-                "id-ID"
-              )}`;
-            });
+              if (postResult.success) {
+                // Setelah berhasil menyimpan, paksa refresh tab Pengaturan untuk menampilkan nilai terbaru
+                console.log(
+                  "[renderPengaturan] Tarif berhasil disimpan. Memaksa refresh tab."
+                );
+                await refreshCurrentTab(true, false); // Force fetch, no spinner (postData already handled it)
+                showMessageBox("Tarif berhasil disimpan!", "success");
+              } else {
+                console.error(
+                  "[renderPengaturan] Gagal menyimpan tarif:",
+                  postResult.message
+                );
+                showMessageBox(
+                  `Gagal menyimpan tarif: ${postResult.message}`,
+                  "error"
+                );
+              }
+            };
+            formAturTarif.addEventListener("submit", newFormAturTarifListener);
+            formAturTarif._eventListener = newFormAturTarifListener; // Simpan referensi listener
+          }
 
-          document
-            .getElementById("reset-data-btn")
-            .addEventListener("click", () => {
+          const resetDataBtn = document.getElementById("reset-data-btn");
+          if (resetDataBtn) {
+            // Hapus listener lama
+            const oldResetDataBtnListener = resetDataBtn._eventListener;
+            if (oldResetDataBtnListener) {
+              resetDataBtn.removeEventListener(
+                "click",
+                oldResetDataBtnListener
+              );
+            }
+
+            const newResetDataBtnListener = () => {
+              console.log("[renderPengaturan] Tombol Reset Data diklik.");
               openModal(`
                       <h3 class="text-base md:text-lg font-semibold mb-4 text-gray-800">Pilih Opsi Reset Data</h3>
                       <p class="text-xs md:text-base text-red-600 font-medium"><i class="fas fa-exclamation-triangle mr-2"></i>Perhatian: Aksi ini tidak dapat dibatalkan!</p>
@@ -1275,14 +1347,17 @@
                 document.getElementById("reset-start-date");
               const resetEndDateEl = document.getElementById("reset-end-date");
 
-              resetEndDateEl.value = new Date().toISOString().split("T")[0];
+              if (resetEndDateEl)
+                resetEndDateEl.value = new Date().toISOString().split("T")[0];
 
               radioButtons.forEach((radio) => {
                 radio.addEventListener("change", (e) => {
                   if (e.target.value === "dateRange") {
-                    dateRangeInputs.classList.remove("hidden");
+                    if (dateRangeInputs)
+                      dateRangeInputs.classList.remove("hidden");
                   } else {
-                    dateRangeInputs.classList.add("hidden");
+                    if (dateRangeInputs)
+                      dateRangeInputs.classList.add("hidden");
                   }
                 });
               });
@@ -1291,20 +1366,35 @@
                 .getElementById("cancel-reset-data")
                 .addEventListener("click", closeModal);
 
-              formResetData.addEventListener("submit", async (e) => {
+              // Hapus listener lama
+              const oldFormResetDataListener = formResetData._eventListener;
+              if (oldFormResetDataListener) {
+                formResetData.removeEventListener(
+                  "submit",
+                  oldFormResetDataListener
+                );
+              }
+
+              const newFormResetDataListener = async (e) => {
                 e.preventDefault();
+                console.log("[renderPengaturan] Form reset data disubmit.");
                 const selectedResetType = formResetData.querySelector(
                   'input[name="reset-type"]:checked'
                 ).value;
                 let payload = { resetType: selectedResetType };
 
                 if (selectedResetType === "dateRange") {
-                  const startDate = resetStartDateEl.value;
-                  const endDate = resetEndDateEl.value;
+                  const startDate = resetStartDateEl
+                    ? resetStartDateEl.value
+                    : "";
+                  const endDate = resetEndDateEl ? resetEndDateEl.value : "";
                   if (!startDate || !endDate) {
                     showMessageBox(
                       "Harap lengkapi tanggal mulai dan akhir untuk reset rentang tanggal.",
                       "error"
+                    );
+                    console.warn(
+                      "[renderPengaturan] Validasi tanggal reset gagal."
                     );
                     return;
                   }
@@ -1331,10 +1421,30 @@
                   .getElementById("final-confirm-reset")
                   .addEventListener("click", async () => {
                     closeModal();
+                    console.log(
+                      "[renderPengaturan] Mengirim resetData payload:",
+                      payload
+                    );
                     await postData("resetData", payload);
+                    // Setelah reset, muat ulang semua data dan aktifkan tab dashboard
+                    await fetchData("getDashboardSummary", {}, false);
+                    await fetchData("getMembers", {}, false);
+                    await fetchData("getExpenses", {}, false);
+                    await fetchData("getCurrentTariff", {}, false);
+                    activateTab("dashboard"); // Kembali ke dashboard setelah reset
+                    showMessageBox("Data berhasil direset!", "success");
                   });
-              });
-            });
+              };
+              formResetData.addEventListener(
+                "submit",
+                newFormResetDataListener
+              );
+              formResetData._eventListener = newFormResetDataListener; // Simpan referensi listener
+            };
+            resetDataBtn.addEventListener("click", newResetDataBtnListener);
+            resetDataBtn._eventListener = newResetDataBtnListener; // Simpan referensi listener
+          }
+          console.log("[renderPengaturan] Selesai.");
         }
 
         async function renderAnggota(forceFetch = false, showSpinner = true) {
@@ -1920,12 +2030,13 @@
 
         console.log("Memulai pengambilan data awal untuk semua tab...");
         // Mengambil semua data awal secara paralel
-        const [dashboardResult, membersResult, expensesResult, tariffResult] =
+        // PERBAIKAN: Memastikan urutan variabel sesuai dengan urutan pemanggilan fetchData
+        const [dashboardResult, membersResult, tariffResult, expensesResult] =
           await Promise.all([
             fetchData("getDashboardSummary"),
-            fetchData("getMembers"), // Digunakan untuk tab Iuran dan Anggota
-            fetchData("getCurrentTariff"),
-            fetchData("getExpenses"),
+            fetchData("getMembers"),
+            fetchData("getCurrentTariff"), // Ini adalah hasil ke-3
+            fetchData("getExpenses"), // Ini adalah hasil ke-4
           ]);
 
         // Menyimpan hasil fetch ke cachedData
@@ -1936,14 +2047,16 @@
           cachedData.iuran = membersResult;
           cachedData.anggota = membersResult;
           members = membersResult.members || []; // Perbarui array members global
-          currentTariff = membersResult.currentTariff || 0; // Perbarui tarif global
+          // currentTariff = membersResult.currentTariff || 0; // Hapus baris ini, tarif diambil dari tariffResult
         }
+        // PERBAIKAN: Pastikan cachedData.pengeluaran diisi dengan expensesResult yang benar
         if (expensesResult) {
           cachedData.pengeluaran = expensesResult;
         }
+        // PERBAIKAN: Pastikan cachedData.pengaturan diisi dengan tariffResult yang benar
         if (tariffResult) {
           cachedData.pengaturan = tariffResult;
-          currentTariff = tariffResult.tariff || 0; // Pastikan tarif global diperbarui
+          currentTariff = tariffResult.tariff || 0; // Pastikan tarif global diperbarui dari tariffResult
         }
 
         console.log("Pengambilan data awal semua tab selesai.");
