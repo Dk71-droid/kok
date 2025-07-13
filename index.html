@@ -732,7 +732,23 @@
                           memberId: memberId,
                           amount: paymentAmount,
                         };
-                        await postData("depositBalance", payload);
+                        const postResult = await postData(
+                          "depositBalance",
+                          payload
+                        ); // Simpan hasil postData
+
+                        if (postResult.success) {
+                          showMessageBox(
+                            "Pembayaran utang berhasil dicatat!",
+                            "success"
+                          );
+                          await refreshCurrentTab(true, false); // Paksa refresh dashboard
+                        } else {
+                          showMessageBox(
+                            `Gagal mencatat pembayaran utang: ${postResult.message}`,
+                            "error"
+                          );
+                        }
                       });
                   });
                 });
