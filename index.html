@@ -32,37 +32,46 @@
       main {
         flex-grow: 1;
         padding-bottom: 70px; /* Ruang untuk navigasi bawah yang tetap */
-        /* Transisi untuk animasi tab (lebih cepat) */
-        transition: opacity 0.2s ease-out, transform 0.2s ease-out;
+        position: relative; /* Penting untuk mengisolasi konteks tumpukan */
+        overflow: hidden; /* Penting untuk menyembunyikan konten yang bergeser di luar batas */
+        width: 100%; /* Pastikan main selalu 100% lebar */
+        /* Transisi untuk animasi tab dipindahkan ke #tab-content-wrapper */
       }
 
-      /* Gaya untuk animasi transisi tab */
+      /* Gaya untuk animasi transisi tab pada pembungkus konten */
+      #tab-content-wrapper {
+        transition: opacity 0.2s ease-out, transform 0.2s ease-out;
+        width: 100%; /* Pastikan wrapper mengisi lebar main */
+        height: 100%; /* Pastikan wrapper mengisi tinggi main */
+        /* Tidak ada absolute positioning di sini, biarkan mengalir normal di dalam main */
+      }
+
       /* Saat tab keluar ke kiri (maju) */
-      main.is-leaving-left {
+      #tab-content-wrapper.is-leaving-left {
         opacity: 0;
         transform: translateX(-20px); /* Geser ke kiri sedikit saat keluar */
       }
 
       /* Saat tab keluar ke kanan (mundur) */
-      main.is-leaving-right {
+      #tab-content-wrapper.is-leaving-right {
         opacity: 0;
         transform: translateX(20px); /* Geser ke kanan sedikit saat keluar */
       }
 
       /* Saat tab masuk dari kiri (mundur) */
-      main.is-entering-left {
+      #tab-content-wrapper.is-entering-left {
         opacity: 0;
         transform: translateX(-20px); /* Posisi awal dari kiri */
       }
 
       /* Saat tab masuk dari kanan (maju) */
-      main.is-entering-right {
+      #tab-content-wrapper.is-entering-right {
         opacity: 0;
         transform: translateX(20px); /* Posisi awal dari kanan */
       }
 
       /* Posisi akhir setelah animasi masuk */
-      main.is-active {
+      #tab-content-wrapper.is-active {
         opacity: 1;
         transform: translateX(0);
       }
@@ -179,7 +188,7 @@
 
     <!-- Area Konten Utama -->
     <main id="app-content" class="container mx-auto px-4 py-8 pb-20 pt-16">
-      <!-- Konten akan dimuat secara dinamis di sini -->
+      <!-- Konten akan dimuat secara dinamis di sini dalam div pembungkus -->
     </main>
 
     <!-- Bilah Navigasi Bawah -->
@@ -482,7 +491,7 @@
         // --- Fungsi Render untuk Setiap Tab ---
 
         async function renderDashboard(forceFetch = false) {
-          const content = document.getElementById("app-content");
+          const content = document.getElementById("tab-content-wrapper"); // Target pembungkus konten
           // Tampilkan kerangka UI segera dengan indikator loading
           content.innerHTML = `
                   <!-- Kartu Ringkasan -->
@@ -713,7 +722,7 @@
         }
 
         async function renderIuran(forceFetch = false) {
-          const content = document.getElementById("app-content");
+          const content = document.getElementById("tab-content-wrapper"); // Target pembungkus konten
           content.innerHTML = `
                   <div class="bg-white rounded-xl shadow-lg p-4 md:p-6 mb-6">
                       <div class="flex border-b border-gray-200 mb-6">
@@ -982,7 +991,7 @@
         }
 
         async function renderPengeluaran(forceFetch = false) {
-          const content = document.getElementById("app-content");
+          const content = document.getElementById("tab-content-wrapper"); // Target pembungkus konten
           content.innerHTML = `
                   <div class="bg-white rounded-xl shadow-lg p-4 md:p-6 mb-6">
                       <h3 class="text-sm font-medium text-gray-700 mb-4">Kirim Pengeluaran</h3>
@@ -1094,7 +1103,7 @@
         }
 
         async function renderPengaturan(forceFetch = false) {
-          const content = document.getElementById("app-content");
+          const content = document.getElementById("tab-content-wrapper"); // Target pembungkus konten
           content.innerHTML = `
                   <div class="bg-white rounded-xl shadow-lg p-4 md:p-6 mb-6">
                       <h3 class="text-sm font-medium text-gray-700 mb-4">Atur Tarif Main</h3>
@@ -1293,7 +1302,7 @@
         }
 
         async function renderAnggota(forceFetch = false) {
-          const content = document.getElementById("app-content");
+          const content = document.getElementById("tab-content-wrapper"); // Target pembungkus konten
           content.innerHTML = `
                   <div class="bg-white rounded-xl shadow-lg p-4 md:p-6 mb-6">
                       <h3 class="text-sm font-medium text-gray-700 mb-4">Tambah Anggota Baru</h3>
@@ -1485,6 +1494,12 @@
           "pengaturan",
         ];
 
+        // Buat div pembungkus konten di dalam main
+        const tabContentWrapper = document.createElement("div");
+        tabContentWrapper.id = "tab-content-wrapper";
+        tabContentWrapper.classList.add("w-full", "h-full"); // Pastikan mengisi area main
+        appContent.appendChild(tabContentWrapper);
+
         // Fungsi utama untuk mengaktifkan tab
         function activateTab(newTabId) {
           const oldTabId = currentActiveTab;
@@ -1492,7 +1507,7 @@
           // maka tidak perlu melakukan apa-apa.
           if (
             oldTabId === newTabId &&
-            appContent.classList.contains("is-active")
+            tabContentWrapper.classList.contains("is-active")
           ) {
             return;
           }
@@ -1545,7 +1560,7 @@
 
           // Fungsi untuk merender konten tab
           const renderContent = () => {
-            appContent.innerHTML = ""; // Bersihkan konten
+            tabContentWrapper.innerHTML = ""; // Bersihkan konten
             switch (newTabId) {
               case "dashboard":
                 renderDashboard();
@@ -1570,8 +1585,8 @@
           };
 
           if (direction !== "none") {
-            // Hapus semua kelas animasi sebelumnya
-            appContent.classList.remove(
+            // Hapus semua kelas animasi sebelumnya dari tabContentWrapper
+            tabContentWrapper.classList.remove(
               "is-active",
               "is-entering-left",
               "is-entering-right",
@@ -1579,49 +1594,49 @@
               "is-leaving-right"
             );
 
-            // Terapkan animasi keluar
+            // Terapkan animasi keluar pada tabContentWrapper
             if (direction === "forward") {
-              appContent.classList.add("is-leaving-left");
+              tabContentWrapper.classList.add("is-leaving-left");
             } else {
-              appContent.classList.add("is-leaving-right");
+              tabContentWrapper.classList.add("is-leaving-right");
             }
 
             // Setelah animasi keluar selesai, render konten baru dan mulai animasi masuk
             setTimeout(() => {
-              appContent.classList.remove(
+              tabContentWrapper.classList.remove(
                 "is-leaving-left",
                 "is-leaving-right"
               ); // Hapus kelas keluar
 
-              // Terapkan kelas 'is-entering' untuk posisi awal animasi masuk
+              // Terapkan kelas 'is-entering' untuk posisi awal animasi masuk pada tabContentWrapper
               if (direction === "forward") {
-                appContent.classList.add("is-entering-right");
+                tabContentWrapper.classList.add("is-entering-right");
               } else {
-                appContent.classList.add("is-entering-left");
+                tabContentWrapper.classList.add("is-entering-left");
               }
 
-              renderContent(); // Render konten baru
+              renderContent(); // Render konten baru ke dalam tabContentWrapper
 
               // Paksa reflow agar transisi 'is-entering' ke 'is-active' bekerja
-              void appContent.offsetWidth;
+              void tabContentWrapper.offsetWidth;
 
-              // Terapkan kelas 'is-active' untuk memulai animasi masuk
-              appContent.classList.remove(
+              // Terapkan kelas 'is-active' untuk memulai animasi masuk pada tabContentWrapper
+              tabContentWrapper.classList.remove(
                 "is-entering-left",
                 "is-entering-right"
               );
-              appContent.classList.add("is-active");
+              tabContentWrapper.classList.add("is-active");
             }, 200); // Durasi transisi CSS untuk keluar
           } else {
             // Untuk pemuatan awal atau klik pada tab yang sama, langsung render tanpa animasi geser
-            appContent.classList.remove(
+            tabContentWrapper.classList.remove(
               "is-leaving-left",
               "is-leaving-right",
               "is-entering-left",
               "is-entering-right"
             );
             renderContent();
-            appContent.classList.add("is-active"); // Pastikan selalu aktif
+            tabContentWrapper.classList.add("is-active"); // Pastikan selalu aktif
           }
         }
 
