@@ -345,9 +345,16 @@
         }
 
         // --- Fungsi untuk Mengambil Data dari Google Apps Script ---
-        async function fetchData(action, params = {}) {
+        // Parameter showRefreshSpinner mengontrol apakah spinner refresh di header akan muncul
+        async function fetchData(
+          action,
+          params = {},
+          showRefreshSpinner = true
+        ) {
+          if (showRefreshSpinner) {
+            toggleRefreshSpinner(true); // Tampilkan spinner jika diminta
+          }
           try {
-            toggleRefreshSpinner(true); // Tampilkan spinner saat fetching
             const urlParams = new URLSearchParams({
               action,
               ...params,
@@ -383,23 +390,30 @@
             showMessageBox(`Gagal memuat data: ${error.message}`, "error");
             return null;
           } finally {
-            toggleRefreshSpinner(false); // Sembunyikan spinner setelah fetching selesai
+            if (showRefreshSpinner) {
+              // Sembunyikan spinner jika sebelumnya ditampilkan oleh fungsi ini
+              toggleRefreshSpinner(false);
+            }
           }
         }
 
         // --- Fungsi untuk Mengirim Data ke Google Apps Script ---
-        async function postData(action, payload) {
-          toggleRefreshSpinner(true);
+        // Parameter suppressSpinner mengontrol apakah fungsi ini akan menampilkan spinner individual
+        async function postData(action, payload, suppressSpinner = false) {
           let success = false;
           let message = "Data berhasil disimpan!";
           let errorOccurred = false;
+
+          if (!suppressSpinner) {
+            toggleRefreshSpinner(true); // Tampilkan spinner jika tidak ditekan
+          }
 
           try {
             const formData = new URLSearchParams();
             formData.append("action", action);
             formData.append("data", JSON.stringify(payload));
 
-            const response = await fetch(GAS_WEB_APP_URL, {
+            const response = await fetch(`${GAS_WEB_APP_URL}`, {
               method: "POST",
               body: formData,
             });
@@ -415,12 +429,12 @@
             }
             success = true;
             message = result.message || message;
-            return result;
+            return { success: true, message: message, data: result }; // Mengembalikan data untuk potensi ID
           } catch (error) {
             console.error("Error posting data:", error);
             message = `Gagal menyimpan data: ${error.message}`;
             errorOccurred = true;
-            return null;
+            return { success: false, message: message, data: null };
           } finally {
             // Invalidasi cache frontend yang relevan setelah operasi POST berhasil
             switch (action) {
@@ -454,43 +468,47 @@
                 cachedData.anggota = null;
                 break;
             }
-            // Selalu refresh tab aktif untuk memastikan data terbaru setelah POST
-            await refreshCurrentTab(true);
-
-            if (success) {
-              showMessageBox(message, "success");
-            } else if (errorOccurred) {
-              showMessageBox(message, "error");
+            // Tampilkan pesan dan sembunyikan spinner hanya jika tidak ditekan
+            if (!suppressSpinner) {
+              if (success) {
+                showMessageBox(message, "success");
+              } else if (errorOccurred) {
+                showMessageBox(message, "error");
+              }
+              toggleRefreshSpinner(false);
             }
-            toggleRefreshSpinner(false);
           }
         }
 
         // --- Fungsi untuk merefresh data tab yang sedang aktif ---
         // Parameter forceFetch akan memaksa pengambilan data dari backend, mengabaikan cache frontend
-        async function refreshCurrentTab(forceFetch = false) {
+        // Parameter showSpinnerOverride akan mengontrol apakah fetchData di dalamnya harus menampilkan spinner
+        async function refreshCurrentTab(
+          forceFetch = false,
+          showSpinnerOverride = true
+        ) {
           switch (currentActiveTab) {
             case "dashboard":
-              await renderDashboard(forceFetch);
+              await renderDashboard(forceFetch, showSpinnerOverride);
               break;
             case "iuran":
-              await renderIuran(forceFetch);
+              await renderIuran(forceFetch, showSpinnerOverride);
               break;
             case "pengeluaran":
-              await renderPengeluaran(forceFetch);
+              await renderPengeluaran(forceFetch, showSpinnerOverride);
               break;
             case "anggota":
-              await renderAnggota(forceFetch);
+              await renderAnggota(forceFetch, showSpinnerOverride);
               break;
             case "pengaturan":
-              await renderPengaturan(forceFetch);
+              await renderPengaturan(forceFetch, showSpinnerOverride);
               break;
           }
         }
 
         // --- Fungsi Render untuk Setiap Tab ---
 
-        async function renderDashboard(forceFetch = false) {
+        async function renderDashboard(forceFetch = false, showSpinner = true) {
           const content = document.getElementById("tab-content-wrapper"); // Target pembungkus konten
           // Tampilkan kerangka UI segera dengan indikator loading
           content.innerHTML = `
@@ -548,7 +566,11 @@
           // Ambil data dari cache frontend atau dari server jika forceFetch atau tidak ada di cache
           let dashboardData = cachedData.dashboard;
           if (forceFetch || !dashboardData) {
-            dashboardData = await fetchData("getDashboardSummary");
+            dashboardData = await fetchData(
+              "getDashboardSummary",
+              {},
+              showSpinner
+            );
           }
 
           if (dashboardData) {
@@ -721,7 +743,7 @@
           }
         }
 
-        async function renderIuran(forceFetch = false) {
+        async function renderIuran(forceFetch = false, showSpinner = true) {
           const content = document.getElementById("tab-content-wrapper"); // Target pembungkus konten
           content.innerHTML = `
                   <div class="bg-white rounded-xl shadow-lg p-4 md:p-6 mb-6">
@@ -788,7 +810,7 @@
           // Ambil data anggota dan tarif dari cache frontend atau dari server
           let membersData = cachedData.iuran;
           if (forceFetch || !membersData) {
-            membersData = await fetchData("getMembers");
+            membersData = await fetchData("getMembers", {}, showSpinner);
           }
 
           if (membersData) {
@@ -850,7 +872,11 @@
             // Ambil dari cache frontend dashboard jika ada, atau fetch jika tidak.
             let dashboardDataForSaldo = cachedData.dashboard;
             if (!dashboardDataForSaldo) {
-              dashboardDataForSaldo = await fetchData("getDashboardSummary");
+              dashboardDataForSaldo = await fetchData(
+                "getDashboardSummary",
+                {},
+                showSpinner
+              );
             }
             const member = dashboardDataForSaldo?.memberBalances?.find(
               (m) => m.id === selectedMemberId
@@ -894,7 +920,11 @@
             let paymentMethod = "none"; // Default for 'belum_bayar' or if logic doesn't apply
             let dashboardDataForPayment = cachedData.dashboard;
             if (!dashboardDataForPayment) {
-              dashboardDataForPayment = await fetchData("getDashboardSummary"); // Ensure we have latest balance
+              dashboardDataForPayment = await fetchData(
+                "getDashboardSummary",
+                {},
+                showSpinner
+              ); // Ensure we have latest balance
             }
             const payingMember = dashboardDataForPayment?.memberBalances?.find(
               (m) => m.id === memberId
@@ -990,7 +1020,10 @@
           switchIuranTab("tab-individu");
         }
 
-        async function renderPengeluaran(forceFetch = false) {
+        async function renderPengeluaran(
+          forceFetch = false,
+          showSpinner = true
+        ) {
           const content = document.getElementById("tab-content-wrapper"); // Target pembungkus konten
           content.innerHTML = `
                   <div class="bg-white rounded-xl shadow-lg p-4 md:p-6 mb-6">
@@ -1040,7 +1073,7 @@
           // Ambil data dari cache frontend atau dari server jika forceFetch atau tidak ada di cache
           let expensesData = cachedData.pengeluaran;
           if (forceFetch || !expensesData) {
-            expensesData = await fetchData("getExpenses");
+            expensesData = await fetchData("getExpenses", {}, showSpinner);
           }
 
           if (expensesData && expensesData.expenses) {
@@ -1102,7 +1135,10 @@
             });
         }
 
-        async function renderPengaturan(forceFetch = false) {
+        async function renderPengaturan(
+          forceFetch = false,
+          showSpinner = true
+        ) {
           const content = document.getElementById("tab-content-wrapper"); // Target pembungkus konten
           content.innerHTML = `
                   <div class="bg-white rounded-xl shadow-lg p-4 md:p-6 mb-6">
@@ -1138,7 +1174,7 @@
           // Ambil data dari cache frontend atau dari server jika forceFetch atau tidak ada di cache
           let tariffData = cachedData.pengaturan;
           if (forceFetch || !tariffData) {
-            tariffData = await fetchData("getCurrentTariff");
+            tariffData = await fetchData("getCurrentTariff", {}, showSpinner);
           }
 
           if (tariffData && tariffData.tariff !== undefined) {
@@ -1301,13 +1337,13 @@
             });
         }
 
-        async function renderAnggota(forceFetch = false) {
+        async function renderAnggota(forceFetch = false, showSpinner = true) {
           const content = document.getElementById("tab-content-wrapper"); // Target pembungkus konten
           content.innerHTML = `
                   <div class="bg-white rounded-xl shadow-lg p-4 md:p-6 mb-6">
                       <h3 class="text-sm font-medium text-gray-700 mb-4">Tambah Anggota Baru</h3>
                       <form id="form-tambah-anggota" class="flex flex-col sm:flex-row gap-4">
-                          <input type="text" id="nama-anggota-baru" class="flex-grow px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-teal-500 focus:border-teal-500 text-sm md:text-base" placeholder="Nama Anggota Baru">
+                          <input type="text" id="nama-anggota-baru" class="flex-grow px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-teal-500 focus:border-teal-500 text-sm md:text-base" placeholder="Nama Anggota Baru (pisahkan dengan koma untuk banyak nama)">
                           <button type="submit" class="bg-teal-600 text-white py-2 px-4 rounded-lg hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2 transition-colors duration-200 text-base font-medium">Tambah Anggota</button>
                       </form>
                   </div>
@@ -1336,7 +1372,7 @@
           // Ambil data dari cache frontend atau dari server jika forceFetch atau tidak ada di cache
           let membersData = cachedData.anggota;
           if (forceFetch || !membersData) {
-            membersData = await fetchData("getMembers");
+            membersData = await fetchData("getMembers", {}, showSpinner);
           }
 
           if (membersData && membersData.members) {
@@ -1352,18 +1388,102 @@
             .getElementById("form-tambah-anggota")
             .addEventListener("submit", async (e) => {
               e.preventDefault();
-              const newMemberName = document
+              const newMemberNamesInput = document
                 .getElementById("nama-anggota-baru")
                 .value.trim();
-              if (!newMemberName) {
+
+              if (!newMemberNamesInput) {
                 showMessageBox("Nama anggota tidak boleh kosong.", "error");
                 return;
               }
 
-              const payload = { name: newMemberName };
-              await postData("addMember", payload);
+              // Split names by comma, trim whitespace, and filter out empty strings
+              const namesToAdd = newMemberNamesInput
+                .split(",")
+                .map((name) => name.trim())
+                .filter((name) => name !== "");
 
-              document.getElementById("nama-anggota-baru").value = "";
+              if (namesToAdd.length === 0) {
+                showMessageBox(
+                  "Nama anggota tidak valid. Harap masukkan setidaknya satu nama.",
+                  "error"
+                );
+                return;
+              }
+
+              // 1. Tambahkan anggota ke array lokal untuk tampilan instan
+              for (const name of namesToAdd) {
+                const tempId = `temp_${Date.now()}_${Math.random()
+                  .toString(36)
+                  .substring(2, 9)}`;
+                members.push({ id: tempId, name: name });
+              }
+              renderMembersTable(document.getElementById("anggota-table-body")); // Perbarui UI
+              document.getElementById("nama-anggota-baru").value = ""; // Bersihkan input
+
+              // 2. Tampilkan spinner refresh di header untuk seluruh operasi batch
+              toggleRefreshSpinner(true);
+
+              // 3. Kirim data ke backend secara asinkron, tanpa menampilkan spinner individual
+              const addPromises = [];
+              for (const name of namesToAdd) {
+                addPromises.push(postData("addMember", { name: name }, true)); // true = suppress spinner
+              }
+
+              const results = await Promise.allSettled(addPromises);
+
+              // 4. Setelah semua operasi backend selesai, refresh data dari backend
+              //    Panggil fetchData dengan showRefreshSpinner: false karena spinner sudah aktif dari langkah 2.
+              await fetchData("getMembers", {}, false); // Refresh members data without showing another spinner
+
+              // 5. Perbarui tabel anggota lagi dengan data definitif dari backend
+              members = cachedData.anggota.members || []; // Ambil data terbaru dari cache
+              renderMembersTable(document.getElementById("anggota-table-body"));
+
+              // 6. Sembunyikan spinner refresh
+              toggleRefreshSpinner(false);
+
+              // 7. Tampilkan pesan ringkasan
+              let successCount = 0;
+              let errorMessages = [];
+              results.forEach((result, index) => {
+                if (
+                  result.status === "fulfilled" &&
+                  result.value &&
+                  result.value.success
+                ) {
+                  successCount++;
+                } else {
+                  const failedName = namesToAdd[index];
+                  const errorMessage = result.value
+                    ? result.value.message
+                    : result.reason
+                    ? result.reason.message
+                    : "Kesalahan tidak diketahui";
+                  errorMessages.push(
+                    `Gagal menambahkan '${failedName}': ${errorMessage}`
+                  );
+                }
+              });
+
+              if (errorMessages.length === 0) {
+                showMessageBox(
+                  `Berhasil menambahkan ${successCount} anggota baru.`,
+                  "success"
+                );
+              } else if (successCount > 0) {
+                showMessageBox(
+                  `Berhasil menambahkan ${successCount} anggota. ${
+                    errorMessages.length
+                  } gagal: ${errorMessages.join("; ")}`,
+                  "error"
+                );
+              } else {
+                showMessageBox(
+                  `Gagal menambahkan anggota: ${errorMessages.join("; ")}`,
+                  "error"
+                );
+              }
             });
 
           function renderMembersTable(tableBodyEl) {
@@ -1440,8 +1560,51 @@
                     return;
                   }
 
-                  const payload = { id: memberId, name: newName };
-                  await postData("updateMember", payload);
+                  // Update locally first
+                  const memberIndex = members.findIndex(
+                    (m) => m.id === memberId
+                  );
+                  if (memberIndex !== -1) {
+                    members[memberIndex].name = newName;
+                    renderMembersTable(
+                      document.getElementById("anggota-table-body")
+                    ); // Re-render immediately
+                  }
+
+                  // Show global spinner
+                  toggleRefreshSpinner(true);
+
+                  // Post to backend without individual spinner
+                  const postResult = await postData(
+                    "updateMember",
+                    { id: memberId, name: newName },
+                    true
+                  ); // suppressSpinner = true
+
+                  // Refresh data from backend after operation
+                  await fetchData("getMembers", {}, false); // showRefreshSpinner = false
+
+                  // Update local members array with definitive data
+                  members = cachedData.anggota.members || [];
+                  renderMembersTable(
+                    document.getElementById("anggota-table-body")
+                  );
+
+                  // Hide global spinner
+                  toggleRefreshSpinner(false);
+
+                  // Show message
+                  if (postResult.success) {
+                    showMessageBox(
+                      `Nama anggota '${newName}' berhasil diperbarui.`,
+                      "success"
+                    );
+                  } else {
+                    showMessageBox(
+                      `Gagal memperbarui anggota: ${postResult.message}`,
+                      "error"
+                    );
+                  }
                 });
               });
 
@@ -1471,9 +1634,47 @@
                     .getElementById("final-confirm-delete")
                     .addEventListener("click", async () => {
                       closeModal();
-                      await postData("deleteMember", {
-                        id: memberId,
-                      });
+
+                      // Remove locally first
+                      members = members.filter((m) => m.id !== memberId);
+                      renderMembersTable(
+                        document.getElementById("anggota-table-body")
+                      ); // Re-render immediately
+
+                      // Show global spinner
+                      toggleRefreshSpinner(true);
+
+                      // Post to backend without individual spinner
+                      const postResult = await postData(
+                        "deleteMember",
+                        { id: memberId },
+                        true
+                      ); // suppressSpinner = true
+
+                      // Refresh data from backend after operation
+                      await fetchData("getMembers", {}, false); // showRefreshSpinner = false
+
+                      // Update local members array with definitive data
+                      members = cachedData.anggota.members || [];
+                      renderMembersTable(
+                        document.getElementById("anggota-table-body")
+                      );
+
+                      // Hide global spinner
+                      toggleRefreshSpinner(false);
+
+                      // Show message
+                      if (postResult.success) {
+                        showMessageBox(
+                          `Anggota '${memberName}' berhasil dihapus.`,
+                          "success"
+                        );
+                      } else {
+                        showMessageBox(
+                          `Gagal menghapus anggota: ${postResult.message}`,
+                          "error"
+                        );
+                      }
                     });
                 });
               });
@@ -1717,22 +1918,39 @@
           }
         });
 
-        console.log("Memulai pengambilan data awal untuk inisialisasi...");
-        // Mengambil data awal yang paling penting untuk mengisi variabel global
-        // Ini akan mengisi cache di server jika belum ada, dan juga di frontend.
-        const initialMembersData = await fetchData("getMembers");
-        if (initialMembersData) {
-          members = initialMembersData.members || [];
-          currentTariff = initialMembersData.currentTariff || 0;
+        console.log("Memulai pengambilan data awal untuk semua tab...");
+        // Mengambil semua data awal secara paralel
+        const [dashboardResult, membersResult, expensesResult, tariffResult] =
+          await Promise.all([
+            fetchData("getDashboardSummary"),
+            fetchData("getMembers"), // Digunakan untuk tab Iuran dan Anggota
+            fetchData("getCurrentTariff"),
+            fetchData("getExpenses"),
+          ]);
+
+        // Menyimpan hasil fetch ke cachedData
+        if (dashboardResult) {
+          cachedData.dashboard = dashboardResult;
         }
-        // Ambil juga data dashboard awal untuk mengisi cache frontend dashboard
-        await fetchData("getDashboardSummary");
+        if (membersResult) {
+          cachedData.iuran = membersResult;
+          cachedData.anggota = membersResult;
+          members = membersResult.members || []; // Perbarui array members global
+          currentTariff = membersResult.currentTariff || 0; // Perbarui tarif global
+        }
+        if (expensesResult) {
+          cachedData.pengeluaran = expensesResult;
+        }
+        if (tariffResult) {
+          cachedData.pengaturan = tariffResult;
+          currentTariff = tariffResult.tariff || 0; // Pastikan tarif global diperbarui
+        }
 
-        console.log("Pengambilan data awal selesai. Mengaktifkan tab.");
+        console.log("Pengambilan data awal semua tab selesai.");
 
-        // Setelah data awal diambil, aktifkan tab yang terakhir aktif
+        // Setelah semua data awal diambil, aktifkan tab yang terakhir aktif
         activateTab(currentActiveTab);
-        toggleActionLoadingOverlay(false);
+        toggleActionLoadingOverlay(false); // Sembunyikan overlay setelah dashboard dirender
       });
     </script>
   </body>
