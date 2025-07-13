@@ -54,18 +54,6 @@
         padding: 2rem; /* Padding yang cukup */
         box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15); /* Bayangan yang lebih jelas */
       }
-      /* Spinner untuk tombol refresh */
-      .fa-spin {
-        animation: fa-spin 1s infinite linear;
-      }
-      @keyframes fa-spin {
-        0% {
-          transform: rotate(0deg);
-        }
-        100% {
-          transform: rotate(360deg);
-        }
-      }
       /* Gradien kustom untuk header - dasar putih bersih */
       .header-gradient {
         background-color: #ffffff; /* Header putih solid untuk tampilan bersih dan modern */
@@ -83,6 +71,46 @@
       .iuran-tab-button:hover {
         background-color: #f0f8ff; /* AliceBlue */
       }
+
+      /* Gaya overlay loading baru (screensaver-like) */
+      #action-loading-overlay {
+        /* Mengubah latar belakang menjadi gradien warna tema badminton */
+        background: linear-gradient(
+          135deg,
+          #4facfe 0%,
+          #00f2fe 100%
+        ); /* Biru ke Cyan */
+        opacity: 1; /* Pastikan sepenuhnya buram */
+        transition: opacity 0.5s ease-out; /* Transisi untuk menyembunyikan */
+      }
+      #action-loading-overlay.hidden {
+        opacity: 0;
+        pointer-events: none; /* Nonaktifkan interaksi saat tersembunyi */
+      }
+
+      /* New pulsating animation for the loading circle */
+      @keyframes pulse-effect {
+        0% {
+          transform: scale(0.8);
+          opacity: 0.7;
+        }
+        50% {
+          transform: scale(1.2);
+          opacity: 1;
+        }
+        100% {
+          transform: scale(0.8);
+          opacity: 0.7;
+        }
+      }
+
+      .pulsating-circle {
+        width: 60px; /* Larger circle */
+        height: 60px;
+        background-color: #ffffff; /* Warna putih untuk kontras dengan gradien */
+        border-radius: 50%;
+        animation: pulse-effect 1.5s infinite ease-in-out;
+      }
     </style>
   </head>
   <body class="bg-gray-50">
@@ -96,7 +124,7 @@
         id="refresh-button"
         class="text-blue-600 text-xl md:text-2xl p-2 rounded-full bg-gray-100 shadow-md hover:bg-gray-200 transition-colors duration-200"
       >
-        <i class="fas fa-sync-alt"></i>
+        <i id="refresh-icon" class="fas fa-sync-alt"></i>
       </button>
     </header>
 
@@ -177,39 +205,23 @@
       <!-- Pesan akan ditampilkan di sini -->
     </div>
 
-    <!-- Loading Overlay untuk aksi spesifik -->
+    <!-- Loading Overlay untuk aksi spesifik dan startup -->
     <div
       id="action-loading-overlay"
-      class="fixed inset-0 bg-gray-800 bg-opacity-50 flex items-center justify-center z-[1000] hidden"
+      class="fixed inset-0 flex items-center justify-center z-[1000] hidden"
     >
-      <div class="flex items-center text-white text-lg font-semibold">
-        <svg
-          class="animate-spin -ml-1 mr-3 h-8 w-8 text-white"
-          xmlns="http://www.w3.org/2000/svg"
-          fill="none"
-          viewBox="0 0 24 24"
-        >
-          <circle
-            class="opacity-25"
-            cx="12"
-            cy="12"
-            r="10"
-            stroke="currentColor"
-            stroke-width="4"
-          ></circle>
-          <path
-            class="opacity-75"
-            fill="currentColor"
-            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-          ></path>
-        </svg>
-        <span>Memproses...</span>
+      <div class="flex flex-col items-center text-white text-lg font-semibold">
+        <div class="pulsating-circle mb-4"></div>
+        <span class="mt-4">Memuat Aplikasi...</span>
       </div>
     </div>
 
     <script>
       // Bungkus seluruh logika aplikasi di dalam DOMContentLoaded
-      document.addEventListener("DOMContentLoaded", () => {
+      document.addEventListener("DOMContentLoaded", async () => {
+        // Tampilkan overlay loading segera setelah DOM dimuat
+        toggleActionLoadingOverlay(true);
+
         // --- Konfigurasi Google Apps Script Web App URL ---
         // PENTING: Ganti dengan URL Web App Google Apps Script Anda.
         // Anda bisa mendapatkan ini setelah menyebarkan (deploy) skrip Code.gs Anda sebagai Web App.
@@ -217,19 +229,19 @@
           "https://script.google.com/macros/s/AKfycbzU4QwlulzK2LLO9u90PBTCN-T9j-lNTPLB01RDRsK6uCxbGt72kQXT7V37MsNraA3A/exec"; // <-- GANTI INI
 
         // --- Status Global ---
-        let members = [];
-        let currentTariff = 0;
-        let unpaidDebts = []; // Ini akan berisi data saldo minus anggota
-        let memberBalances = [];
-        let currentActiveTab = "dashboard";
+        let members = []; // Akan diisi dari getMembers
+        let currentTariff = 0; // Akan diisi dari getCurrentTariff
+        // Ambil tab terakhir yang aktif dari localStorage, default ke "dashboard"
+        let currentActiveTab =
+          localStorage.getItem("lastActiveTab") || "dashboard";
 
-        // Cache untuk menyimpan data yang sudah diambil
+        // Cache untuk menyimpan data yang sudah diambil dari Apps Script di frontend
         let cachedData = {
           dashboard: null,
-          iuran: null,
+          iuran: null, // Digunakan untuk tab Iuran dan Anggota (members & tariff)
           pengeluaran: null,
-          pengaturan: null,
-          anggota: null,
+          pengaturan: null, // Untuk tarif
+          anggota: null, // Alias untuk members (jika diperlukan pemisahan)
         };
 
         // --- Fungsi Utilitas ---
@@ -249,36 +261,35 @@
           msgBox.classList.remove("hidden");
           setTimeout(() => {
             msgBox.classList.add("hidden");
-          }, 3000); // Sembunyikan setelah 3 detik
+          }, 3000);
         }
 
-        // Fungsi untuk mengaktifkan/menonaktifkan spinner refresh di header
-        function toggleRefreshSpinner(show) {
-          const refreshButton = document.getElementById("refresh-button");
-          const spinnerIcon = refreshButton.querySelector("i");
-          if (show) {
-            spinnerIcon.classList.add("fa-spin");
-          } else {
-            spinnerIcon.classList.remove("fa-spin");
-          }
-        }
-
-        // Fungsi untuk mengaktifkan/menonaktifkan loading overlay global
+        // Fungsi untuk mengaktifkan/menonaktifkan loading overlay global (screensaver)
         function toggleActionLoadingOverlay(show) {
           const overlay = document.getElementById("action-loading-overlay");
           if (show) {
             overlay.classList.remove("hidden");
           } else {
-            overlay.classList.add("hidden");
+            setTimeout(() => {
+              overlay.classList.add("hidden");
+            }, 500); // Sesuaikan durasi transisi CSS
+          }
+        }
+
+        // Fungsi untuk mengaktifkan/menonaktifkan spinner pada ikon refresh
+        const refreshIcon = document.getElementById("refresh-icon");
+        function toggleRefreshSpinner(show) {
+          if (show) {
+            refreshIcon.classList.add("fa-spin");
+          } else {
+            refreshIcon.classList.remove("fa-spin");
           }
         }
 
         // --- Fungsi untuk Mengambil Data dari Google Apps Script ---
-        async function fetchData(action, params = {}, showSpinner = true) {
-          if (showSpinner) {
-            toggleRefreshSpinner(true);
-          }
+        async function fetchData(action, params = {}) {
           try {
+            toggleRefreshSpinner(true); // Tampilkan spinner saat fetching
             const urlParams = new URLSearchParams({
               action,
               ...params,
@@ -296,31 +307,42 @@
             if (result.error) {
               throw new Error(result.error);
             }
+
+            // Simpan hasil ke cache frontend
+            if (action === "getDashboardSummary") {
+              cachedData.dashboard = result;
+            } else if (action === "getMembers") {
+              cachedData.iuran = result; // Data anggota digunakan di tab Iuran
+              cachedData.anggota = result; // Data anggota digunakan di tab Anggota
+            } else if (action === "getExpenses") {
+              cachedData.pengeluaran = result;
+            } else if (action === "getCurrentTariff") {
+              cachedData.pengaturan = result;
+            }
             return result;
           } catch (error) {
             console.error("Error fetching data:", error);
             showMessageBox(`Gagal memuat data: ${error.message}`, "error");
             return null;
           } finally {
-            if (showSpinner) {
-              toggleRefreshSpinner(false);
-            }
+            toggleRefreshSpinner(false); // Sembunyikan spinner setelah fetching selesai
           }
         }
 
         // --- Fungsi untuk Mengirim Data ke Google Apps Script ---
         async function postData(action, payload) {
-          toggleActionLoadingOverlay(true); // Tampilkan loading overlay untuk aksi POST
+          toggleRefreshSpinner(true);
+          let success = false;
+          let message = "Data berhasil disimpan!";
+          let errorOccurred = false;
+
           try {
-            // Mengubah payload menjadi format x-www-form-urlencoded
             const formData = new URLSearchParams();
             formData.append("action", action);
-            formData.append("data", JSON.stringify(payload)); // Stringify data payload
+            formData.append("data", JSON.stringify(payload));
 
             const response = await fetch(GAS_WEB_APP_URL, {
               method: "POST",
-              // Headers Content-Type tidak perlu diset secara manual untuk URLSearchParams,
-              // fetch akan menanganinya dengan benar sebagai application/x-www-form-urlencoded
               body: formData,
             });
             if (!response.ok) {
@@ -333,98 +355,90 @@
             if (result.error) {
               throw new Error(result.error);
             }
-            showMessageBox(
-              result.message || "Data berhasil disimpan!",
-              "success"
-            );
+            success = true;
+            message = result.message || message;
             return result;
           } catch (error) {
             console.error("Error posting data:", error);
-            showMessageBox(`Gagal menyimpan data: ${error.message}`, "error");
+            message = `Gagal menyimpan data: ${error.message}`;
+            errorOccurred = true;
             return null;
           } finally {
-            // Setelah POST apapun, segarkan semua data dan kemudian refresh tab saat ini
-            cachedData.dashboard = null; // Hapus cache dashboard secara eksplisit
-            cachedData.iuran = null;
-            cachedData.pengeluaran = null;
-            cachedData.pengaturan = null;
-            cachedData.anggota = null;
-            await new Promise((resolve) => setTimeout(resolve, 500)); // Tambahkan penundaan kecil
-            await refreshAllCachedData(); // Panggil fungsi baru untuk refresh semua cache
-            refreshCurrentTab(); // Kemudian refresh tab yang aktif
-            toggleActionLoadingOverlay(false); // Sembunyikan loading overlay setelah semua data diperbarui dan tab dirender
-          }
-        }
+            // Invalidasi cache frontend yang relevan setelah operasi POST berhasil
+            switch (action) {
+              case "addMember":
+              case "updateMember":
+              case "deleteMember":
+                cachedData.anggota = null;
+                cachedData.dashboard = null; // Perubahan anggota mempengaruhi dashboard
+                cachedData.iuran = null; // Daftar anggota untuk dropdown iuran
+                break;
+              case "recordPayment":
+              case "depositBalance":
+                cachedData.iuran = null; // Pembayaran mempengaruhi status iuran
+                cachedData.dashboard = null; // Pembayaran mempengaruhi total dashboard
+                break;
+              case "recordExpense":
+                cachedData.pengeluaran = null;
+                cachedData.dashboard = null; // Pengeluaran mempengaruhi total dashboard
+                break;
+              case "setTariff":
+                cachedData.pengaturan = null;
+                cachedData.iuran = null; // Tarif mempengaruhi perhitungan iuran
+                cachedData.dashboard = null; // Tarif mempengaruhi ringkasan dashboard
+                break;
+              case "resetData":
+                // Invalidasi semua cache untuk reset penuh
+                cachedData.dashboard = null;
+                cachedData.iuran = null;
+                cachedData.pengeluaran = null;
+                cachedData.pengaturan = null;
+                cachedData.anggota = null;
+                break;
+            }
+            // Selalu refresh tab aktif untuk memastikan data terbaru setelah POST
+            await refreshCurrentTab(true);
 
-        // --- Fungsi baru untuk merefresh semua data yang di-cache ---
-        async function refreshAllCachedData() {
-          console.log(
-            "Memulai pengambilan data latar belakang untuk semua tab..."
-          );
-          // Mengambil semua data dan memperbarui cache
-          const dashboardData = await fetchData(
-            "getDashboardSummary",
-            {},
-            false
-          );
-          if (dashboardData) {
-            cachedData.dashboard = dashboardData;
-            unpaidDebts = dashboardData.unpaidDebts || []; // Ini akan berisi data saldo minus anggota
-            memberBalances = dashboardData.memberBalances || [];
-            currentTariff = dashboardData.currentTariff || 0;
+            if (success) {
+              showMessageBox(message, "success");
+            } else if (errorOccurred) {
+              showMessageBox(message, "error");
+            }
+            toggleRefreshSpinner(false);
           }
-
-          const membersData = await fetchData("getMembers", {}, false);
-          if (membersData) {
-            cachedData.iuran = membersData;
-            cachedData.anggota = membersData;
-            members = membersData.members;
-            currentTariff = membersData.currentTariff;
-          }
-
-          const expensesData = await fetchData("getExpenses", {}, false);
-          if (expensesData) cachedData.pengeluaran = expensesData;
-
-          const tariffData = await fetchData("getCurrentTariff", {}, false);
-          if (tariffData) {
-            cachedData.pengaturan = tariffData;
-            currentTariff = tariffData.tariff;
-          }
-          console.log(
-            "Pengambilan data latar belakang untuk semua tab selesai."
-          );
         }
 
         // --- Fungsi untuk merefresh data tab yang sedang aktif ---
-        async function refreshCurrentTab() {
-          showMessageBox("Memuat ulang data...", "info");
+        // Parameter forceFetch akan memaksa pengambilan data dari backend, mengabaikan cache frontend
+        async function refreshCurrentTab(forceFetch = false) {
           switch (currentActiveTab) {
             case "dashboard":
-              await renderDashboard(true); // Paksa pengambilan ulang
+              await renderDashboard(forceFetch);
               break;
             case "iuran":
-              await renderIuran(true); // Paksa pengambilan ulang
+              await renderIuran(forceFetch);
               break;
             case "pengeluaran":
-              await renderPengeluaran(true); // Paksa pengambilan ulang
-              break;
-            case "pengaturan":
-              await renderPengaturan(true); // Paksa pengambilan ulang
+              await renderPengeluaran(forceFetch);
               break;
             case "anggota":
-              await renderAnggota(true); // Paksa pengambilan ulang
+              await renderAnggota(forceFetch);
+              break;
+            case "pengaturan":
+              await renderPengaturan(forceFetch);
               break;
           }
         }
 
         // --- Fungsi Render untuk Setiap Tab ---
 
-        async function renderDashboard(forceRefresh = false) {
+        async function renderDashboard(forceFetch = false) {
           const content = document.getElementById("app-content");
+          // Tampilkan kerangka UI segera dengan indikator loading
           content.innerHTML = `
                   <h2 class="text-xl md:text-2xl font-bold text-gray-800 mb-6 text-center">Ringkasan Aktivitas</h2>
 
-                  <!-- Kartu Ringkasan Baru -->
+                  <!-- Kartu Ringkasan -->
                   <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
                       <!-- Kartu Jumlah Belum Bayar -->
                       <div id="card-belum-bayar" class="bg-white rounded-xl shadow-lg p-6 flex flex-col items-center justify-center text-center cursor-pointer hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
@@ -432,8 +446,8 @@
                               <i class="fas fa-exclamation-triangle text-3xl"></i>
                           </div>
                           <h3 class="text-lg font-semibold text-gray-700 mb-2">Jumlah Belum Bayar</h3>
-                          <p class="text-4xl font-extrabold text-red-700">Rp 0</p>
-                          <p class="text-sm text-gray-500 mt-2">Ketuk untuk detail saldo minus</p>
+                          <p class="text-4xl font-extrabold text-red-700">Memuat...</p>
+                          <p class="text-sm text-gray-500 mt-2">Ketuk untuk detail iuran belum dibayar</p>
                       </div>
 
                       <!-- Kartu Total Saldo Kas -->
@@ -442,7 +456,7 @@
                               <i class="fas fa-wallet text-3xl"></i>
                           </div>
                           <h3 class="text-lg font-semibold text-gray-700 mb-2">Total Saldo Kas</h3>
-                          <p id="total-balance-display" class="text-4xl font-extrabold text-green-700">Rp 0</p>
+                          <p id="total-balance-display" class="text-4xl font-extrabold text-green-700">Memuat...</p>
                           <p class="text-sm text-gray-500 mt-2">Total dana yang tersedia</p>
                       </div>
                   </div>
@@ -459,7 +473,7 @@
                                   </tr>
                               </thead>
                               <tbody id="saldo-table-body" class="bg-white divide-y divide-gray-200">
-                                  <!-- Data saldo akan dimuat di sini -->
+                                  <tr><td colspan="2" class="text-center py-4 text-gray-500">Memuat data...</td></tr>
                               </tbody>
                           </table>
                       </div>
@@ -469,159 +483,134 @@
                   </div>
               `;
 
-          let dashboardData;
-          if (forceRefresh || !cachedData.dashboard) {
-            dashboardData = await fetchData("getDashboardSummary", {}, true); // Tampilkan spinner untuk refresh eksplisit atau pemuatan awal
-            if (dashboardData) cachedData.dashboard = dashboardData;
-          } else {
-            dashboardData = cachedData.dashboard;
+          // Ambil data dari cache frontend atau dari server jika forceFetch atau tidak ada di cache
+          let dashboardData = cachedData.dashboard;
+          if (forceFetch || !dashboardData) {
+            dashboardData = await fetchData("getDashboardSummary");
           }
 
           if (dashboardData) {
-            unpaidDebts = dashboardData.unpaidDebts || []; // Ini sekarang berisi anggota dengan saldo minus
-            memberBalances = dashboardData.memberBalances || [];
-            currentTariff = dashboardData.currentTariff || 0; // Pastikan tarif tersedia secara global
+            const totalUnpaidAmount = dashboardData.totalUnpaidAmount || 0;
+            const totalCashBalance = dashboardData.totalCashBalance || 0;
+            const unpaidDebts = dashboardData.unpaidDebts || [];
+            const memberBalancesForDisplay = dashboardData.memberBalances || [];
+            currentTariff = dashboardData.currentTariff || 0;
 
-            // Perbarui Kartu Jumlah Belum Bayar (berdasarkan total saldo minus)
-            const totalNegativeBalance = memberBalances.reduce(
-              (sum, member) => {
-                return (
-                  sum + (member.balance < 0 ? Math.abs(member.balance) : 0)
-                );
-              },
-              0
-            );
-            document
-              .getElementById("card-belum-bayar")
-              .querySelector("h3").textContent = `Jumlah Belum Bayar`; // Mengembalikan nama kartu
             document
               .getElementById("card-belum-bayar")
               .querySelector(
                 "p"
-              ).textContent = `Rp ${totalNegativeBalance.toLocaleString(
-              "id-ID"
-            )}`;
+              ).textContent = `Rp ${totalUnpaidAmount.toLocaleString("id-ID")}`;
 
-            // Hitung dan perbarui Kartu Total Saldo Kas: Hanya jumlahkan saldo positif
-            const totalCashBalance = memberBalances.reduce((sum, member) => {
-              return sum + (member.balance > 0 ? member.balance : 0);
-            }, 0);
             document.getElementById(
               "total-balance-display"
             ).textContent = `Rp ${totalCashBalance.toLocaleString("id-ID")}`;
 
-            // Tabel Saldo
             const saldoTableBody = document.getElementById("saldo-table-body");
-            saldoTableBody.innerHTML = memberBalances
+            const displayMembers = memberBalancesForDisplay;
+            saldoTableBody.innerHTML = displayMembers
               .map(
                 (member) => `
-                    <tr>
-                        <td class="px-4 py-2 whitespace-nowrap text-sm md:text-base font-medium text-gray-900 rounded-bl-lg">${
-                          member.name
-                        }</td>
-                        <td class="px-4 py-2 whitespace-nowrap text-sm md:text-base ${
-                          member.balance < 0
-                            ? "text-red-600 font-bold"
-                            : "text-gray-900"
-                        } rounded-br-lg">
-                            Rp ${member.balance.toLocaleString("id-ID")}
-                        </td>
-                    </tr>
-                `
+                      <tr>
+                          <td class="px-4 py-2 whitespace-nowrap text-sm md:text-base font-medium text-gray-900 rounded-bl-lg">${
+                            member.name
+                          }</td>
+                          <td class="px-4 py-2 whitespace-nowrap text-sm md:text-base ${
+                            member.balance < 0
+                              ? "text-red-600 font-bold"
+                              : "text-gray-900"
+                          } rounded-br-lg">
+                              Rp ${member.balance.toLocaleString("id-ID")}
+                          </td>
+                      </tr>
+                  `
               )
               .join("");
 
-            // Event listener untuk kartu "Jumlah Belum Bayar"
-            document
-              .getElementById("card-belum-bayar")
-              .addEventListener("click", () => {
-                // Filter hanya yang memiliki saldo minus (jumlah > 0)
-                const membersWithNegativeBalance = memberBalances
-                  .filter((m) => m.balance < 0)
-                  .map((m) => ({
-                    memberId: m.id,
-                    name: m.name,
-                    amount: Math.abs(m.balance), // Ambil nilai absolut saldo minus
-                  }));
+            const cardBelumBayar = document.getElementById("card-belum-bayar");
+            if (cardBelumBayar) {
+              const oldListener = cardBelumBayar._eventListener;
+              if (oldListener) {
+                cardBelumBayar.removeEventListener("click", oldListener);
+              }
 
-                if (membersWithNegativeBalance.length === 0) {
-                  showMessageBox(
-                    "Tidak ada anggota dengan saldo minus.",
-                    "info"
-                  );
+              const newListener = () => {
+                if (unpaidDebts.length === 0) {
+                  showMessageBox("Tidak ada iuran yang belum dibayar.", "info");
                   return;
                 }
+
                 let debtListHtml = `
-                        <h3 class="text-lg md:text-xl font-bold mb-4 text-gray-800">Detail Saldo Minus Anggota</h3>
-                        <div class="max-h-80 overflow-y-auto">
-                            <table class="min-w-full divide-y divide-gray-200">
-                                <thead class="bg-gray-50">
-                                    <tr>
-                                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Nama</th>
-                                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Saldo Minus</th>
-                                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Aksi</th>
-                                    </tr>
-                                </thead>
-                                <tbody class="bg-white divide-y divide-gray-200">
-                                    ${membersWithNegativeBalance
-                                      .map(
-                                        (debt) => `
-                                        <tr data-member-id="${
-                                          debt.memberId
-                                        }" data-debt-amount="${
-                                          debt.amount
-                                        }" data-member-name="${debt.name}">
-                                            <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-900">${
-                                              debt.name
-                                            }</td>
-                                            <td class="px-4 py-2 whitespace-nowrap text-sm text-red-600 font-semibold">Rp ${debt.amount.toLocaleString(
-                                              "id-ID"
-                                            )}</td>
-                                            <td class="px-4 py-2 whitespace-nowrap text-sm">
-                                                <button class="pay-debt-btn bg-blue-500 text-white px-3 py-1 rounded-md text-xs hover:bg-blue-600 transition-colors">Bayar</button>
-                                            </td>
-                                        </tr>
-                                    `
-                                      )
-                                      .join("")}
-                                </tbody>
-                            </table>
-                        </div>
-                    `;
+                              <h3 class="text-lg md:text-xl font-bold mb-4 text-gray-800">Detail Iuran Belum Dibayar</h3>
+                              <div class="max-h-80 overflow-y-auto">
+                                  <table class="min-w-full divide-y divide-gray-200">
+                                      <thead class="bg-gray-50">
+                                          <tr>
+                                              <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Nama</th>
+                                              <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Total Utang</th>
+                                              <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Aksi</th>
+                                          </tr>
+                                      </thead>
+                                      <tbody class="bg-white divide-y divide-gray-200">
+                                          ${unpaidDebts
+                                            .map(
+                                              (debt) => `
+                                              <tr data-member-id="${
+                                                debt.memberId
+                                              }" data-debt-amount="${
+                                                debt.amount
+                                              }" data-member-name="${
+                                                debt.name
+                                              }">
+                                                  <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-900">${
+                                                    debt.name
+                                                  }</td>
+                                                  <td class="px-4 py-2 whitespace-nowrap text-sm text-red-600 font-semibold">Rp ${debt.amount.toLocaleString(
+                                                    "id-ID"
+                                                  )}</td>
+                                                  <td class="px-4 py-2 whitespace-nowrap text-sm">
+                                                      <button class="pay-debt-btn bg-blue-500 text-white px-3 py-1 rounded-md text-xs hover:bg-blue-600 transition-colors">Bayar</button>
+                                                  </td>
+                                              </tr>
+                                          `
+                                            )
+                                            .join("")}
+                                      </tbody>
+                                  </table>
+                              </div>
+                          `;
                 openModal(debtListHtml);
 
-                // Tambahkan event listener untuk tombol "Bayar" di dalam modal
                 document.querySelectorAll(".pay-debt-btn").forEach((button) => {
                   button.addEventListener("click", (e) => {
                     const row = e.target.closest("tr");
                     const memberId = row.dataset.memberId;
-                    const debtAmount = parseFloat(row.dataset.debtAmount); // Ini adalah saldo minus saat ini
+                    const debtAmount = parseFloat(row.dataset.debtAmount);
                     const memberName = row.dataset.memberName;
 
-                    // Buka modal baru untuk pembayaran utang
                     openModal(`
-                            <h3 class="text-lg md:text-xl font-bold mb-4 text-gray-800">Bayar Saldo Minus</h3>
-                            <form id="form-pay-debt" class="space-y-4">
-                                <div>
-                                    <label class="block text-sm font-medium text-gray-700 mb-2">Anggota</label>
-                                    <input type="text" value="${memberName}" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm bg-gray-100 cursor-not-allowed text-sm md:text-base" readonly>
-                                </div>
-                                <div>
-                                    <label class="block text-sm font-medium text-gray-700 mb-2">Jumlah Saldo Minus</label>
-                                    <input type="text" value="Rp ${debtAmount.toLocaleString(
-                                      "id-ID"
-                                    )}" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm bg-gray-100 cursor-not-allowed text-sm md:text-base" readonly>
-                                </div>
-                                <div>
-                                    <label for="payment-amount" class="block text-sm font-medium text-gray-700 mb-2">Nominal Pembayaran (Rp)</label>
-                                    <input type="number" id="payment-amount" min="1" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm md:text-base" placeholder="Masukkan jumlah pembayaran">
-                                </div>
-                                <div class="flex justify-end gap-4">
-                                    <button type="button" id="cancel-pay-debt" class="bg-gray-300 text-gray-800 py-2 px-4 rounded-md hover:bg-gray-400 text-sm md:text-base">Batal</button>
-                                    <button type="submit" class="bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 text-sm md:text-base">Proses Pembayaran</button>
-                                </div>
-                            </form>
-                        `);
+                                  <h3 class="text-lg md:text-xl font-bold mb-4 text-gray-800">Bayar Iuran Belum Dibayar</h3>
+                                  <form id="form-pay-debt" class="space-y-4">
+                                      <div>
+                                          <label class="block text-sm font-medium text-gray-700 mb-2">Anggota</label>
+                                          <input type="text" value="${memberName}" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm bg-gray-100 cursor-not-allowed text-sm md:text-base" readonly>
+                                      </div>
+                                      <div>
+                                          <label class="block text-sm font-medium text-gray-700 mb-2">Jumlah Iuran Belum Dibayar</label>
+                                          <input type="text" value="Rp ${debtAmount.toLocaleString(
+                                            "id-ID"
+                                          )}" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm bg-gray-100 cursor-not-allowed text-sm md:text-base" readonly>
+                                      </div>
+                                      <div>
+                                          <label for="payment-amount" class="block text-sm font-medium text-gray-700 mb-2">Nominal Pembayaran (Rp)</label>
+                                          <input type="number" id="payment-amount" min="1" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm md:text-base" placeholder="Masukkan jumlah pembayaran">
+                                      </div>
+                                      <div class="flex justify-end gap-4">
+                                          <button type="button" id="cancel-pay-debt" class="bg-gray-300 text-gray-800 py-2 px-4 rounded-md hover:bg-gray-400 text-sm md:text-base">Batal</button>
+                                          <button type="submit" class="bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 text-sm md:text-base">Proses Pembayaran</button>
+                                      </div>
+                                  </form>
+                              `);
 
                     document
                       .getElementById("cancel-pay-debt")
@@ -641,30 +630,24 @@
                           );
                           return;
                         }
-                        // Tidak perlu validasi paymentAmount > debtAmount di sini,
-                        // karena depositBalance di GAS akan menangani penambahan saldo secara fleksibel.
-                        // Jika pembayaran melebihi saldo minus, saldo akan menjadi positif.
 
-                        closeModal(); // Tutup modal pembayaran
+                        closeModal();
                         const payload = {
                           memberId: memberId,
                           amount: paymentAmount,
                         };
-                        const result = await postData(
-                          "depositBalance",
-                          payload
-                        ); // Gunakan depositBalance untuk mengurangi utang
-                        if (result) {
-                          // refreshCurrentTab() dipanggil oleh blok finally postData
-                        }
+                        await postData("depositBalance", payload);
                       });
                   });
                 });
-              });
+              };
+              cardBelumBayar.addEventListener("click", newListener);
+              cardBelumBayar._eventListener = newListener;
+            }
           }
         }
 
-        async function renderIuran(forceRefresh = false) {
+        async function renderIuran(forceFetch = false) {
           const content = document.getElementById("app-content");
           content.innerHTML = `
                   <h2 class="text-xl md:text-2xl font-bold text-gray-800 mb-6 text-center">Pencatatan Iuran</h2>
@@ -727,34 +710,28 @@
                   </div>
               `;
 
-          // Atur tanggal default untuk "Tanggal Iuran"
           const today = new Date().toISOString().split("T")[0];
           document.getElementById("tanggal-iuran").value = today;
 
-          let membersData;
-          // Hanya ambil data jika belum ada di cache atau dipaksa refresh
-          if (forceRefresh || !cachedData.iuran) {
-            membersData = await fetchData("getMembers", {}, true);
-            if (membersData) cachedData.iuran = membersData;
-          } else {
-            membersData = cachedData.iuran;
+          // Ambil data anggota dan tarif dari cache frontend atau dari server
+          let membersData = cachedData.iuran;
+          if (forceFetch || !membersData) {
+            membersData = await fetchData("getMembers");
           }
 
           if (membersData) {
             members = membersData.members || [];
-            currentTariff = membersData.currentTariff || 0; // Perbarui tarif global
+            currentTariff = membersData.currentTariff || 0;
           } else {
             members = [];
           }
 
-          // Isi dropdown anggota
           const memberSelectIndividu = document.getElementById(
             "member-select-individu"
           );
           const memberSelectSetor = document.getElementById(
             "member-select-setor"
           );
-          // Hapus opsi yang ada sebelum mengisi
           memberSelectIndividu.innerHTML =
             '<option value="">Pilih Anggota</option>';
           memberSelectSetor.innerHTML =
@@ -772,7 +749,6 @@
             memberSelectSetor.appendChild(option2);
           });
 
-          // Logika Input Iuran
           const formIndividu = document.getElementById("form-input-individu");
           const memberSelectIndividuEl = document.getElementById(
             "member-select-individu"
@@ -792,22 +768,29 @@
             "saldo-info-individu"
           );
 
-          // Fungsi untuk memperbarui nominal dan memeriksa saldo
-          const updateNominalAndSaldo = () => {
+          const updateNominalAndSaldo = async () => {
             const jumlahMain = parseInt(jumlahMainIndividuEl.value);
             const nominal = jumlahMain * currentTariff;
             nominalIuranEl.value = `Rp ${nominal.toLocaleString("id-ID")}`;
 
             const selectedMemberId = memberSelectIndividuEl.value;
-            const member = members.find((m) => m.id === selectedMemberId);
+            // Untuk mendapatkan saldo terbaru, kita perlu data dashboard.
+            // Ambil dari cache frontend dashboard jika ada, atau fetch jika tidak.
+            let dashboardDataForSaldo = cachedData.dashboard;
+            if (!dashboardDataForSaldo) {
+              dashboardDataForSaldo = await fetchData("getDashboardSummary");
+            }
+            const member = dashboardDataForSaldo?.memberBalances?.find(
+              (m) => m.id === selectedMemberId
+            );
 
             if (member && member.balance >= nominal && nominal > 0) {
               statusBayarWrapper.classList.add("hidden");
-              statusBayarIndividuEl.value = "sudah_bayar"; // Paksa ke 'sudah_bayar'
+              statusBayarIndividuEl.value = "sudah_bayar";
               saldoInfoIndividuEl.classList.remove("hidden");
             } else {
               statusBayarWrapper.classList.remove("hidden");
-              statusBayarIndividuEl.value = "belum_bayar"; // Reset ke 'belum_bayar' jika saldo tidak cukup
+              statusBayarIndividuEl.value = "belum_bayar";
               saldoInfoIndividuEl.classList.add("hidden");
             }
           };
@@ -817,15 +800,15 @@
             updateNominalAndSaldo
           );
           jumlahMainIndividuEl.addEventListener("input", updateNominalAndSaldo);
-          // Panggilan awal untuk mengatur nominal dan memeriksa saldo
           updateNominalAndSaldo();
 
           formIndividu.addEventListener("submit", async (e) => {
             e.preventDefault();
             const memberId = memberSelectIndividuEl.value;
             const jumlahMain = parseInt(jumlahMainIndividuEl.value);
-            const statusBayar = statusBayarIndividuEl.value; // Akan menjadi 'sudah_bayar' jika tersembunyi
-            const tanggal = tanggalIuranEl.value; // Ambil tanggal dari kolom readonly
+            const statusBayar = statusBayarIndividuEl.value;
+            const tanggal = tanggalIuranEl.value;
+            const nominal = jumlahMain * currentTariff;
 
             if (!memberId || isNaN(jumlahMain) || jumlahMain <= 0 || !tanggal) {
               showMessageBox(
@@ -841,19 +824,15 @@
               jumlahMain,
               statusBayar,
               tariff: currentTariff,
-              date: tanggal, // Sertakan tanggal
+              date: tanggal,
             };
-            const result = await postData("recordPayment", payload);
+            await postData("recordPayment", payload);
 
-            if (result) {
-              formIndividu.reset();
-              tanggalIuranEl.value = today; // Reset tanggal ke hari ini
-              updateNominalAndSaldo(); // Reset nominal dan info saldo
-              // refreshCurrentTab() dipanggil oleh blok finally postData
-            }
+            formIndividu.reset();
+            tanggalIuranEl.value = today;
+            updateNominalAndSaldo();
           });
 
-          // Logika Setor Saldo
           const formSetorSaldo = document.getElementById("form-setor-saldo");
           formSetorSaldo.addEventListener("submit", async (e) => {
             e.preventDefault();
@@ -876,15 +855,11 @@
               memberId,
               amount: nominalSetor,
             };
-            const result = await postData("depositBalance", payload);
+            await postData("depositBalance", payload);
 
-            if (result) {
-              formSetorSaldo.reset();
-              // refreshCurrentTab() dipanggil oleh blok finally postData
-            }
+            formSetorSaldo.reset();
           });
 
-          // Logika pengalihan tab untuk bagian Iuran
           const tabIndividu = document.getElementById("tab-individu");
           const tabSetorSaldo = document.getElementById("tab-setor-saldo");
           const contentIndividu = document.getElementById("content-individu");
@@ -900,12 +875,12 @@
 
             if (activeTabId === "tab-individu") {
               tabIndividu.classList.add("iuran-tab-button", "active");
-              tabSetorSaldo.classList.remove("active"); // Pastikan tab lain tidak aktif
+              tabSetorSaldo.classList.remove("active");
               contentIndividu.classList.remove("hidden");
               contentSetorSaldo.classList.add("hidden");
             } else if (activeTabId === "tab-setor-saldo") {
               tabSetorSaldo.classList.add("iuran-tab-button", "active");
-              tabIndividu.classList.remove("active"); // Pastikan tab lain tidak aktif
+              tabIndividu.classList.remove("active");
               contentSetorSaldo.classList.remove("hidden");
               contentIndividu.classList.add("hidden");
             }
@@ -918,11 +893,10 @@
             switchIuranTab("tab-setor-saldo")
           );
 
-          // Default ke tab 'Bayar Iuran'
           switchIuranTab("tab-individu");
         }
 
-        async function renderPengeluaran(forceRefresh = false) {
+        async function renderPengeluaran(forceFetch = false) {
           const content = document.getElementById("app-content");
           content.innerHTML = `
                   <h2 class="text-xl md:text-2xl font-bold text-gray-800 mb-6 text-center">Catat Pengeluaran</h2>
@@ -942,7 +916,7 @@
                               <input type="date" id="tanggal-pengeluaran" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm md:text-base">
                           </div>
                           <button type="submit" class="w-full bg-blue-600 text-white py-2 md:py-3 px-4 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors duration-200 text-base md:text-lg font-semibold">Kirim Pengeluaran</button>
-                      </form>
+                          </form>
                   </div>
 
                   <div class="bg-white rounded-xl shadow-lg p-4 md:p-6">
@@ -957,7 +931,7 @@
                                   </tr>
                               </thead>
                               <tbody id="pengeluaran-table-body" class="bg-white divide-y divide-gray-200">
-                                  <!-- Data pengeluaran akan dimuat di sini -->
+                                  <tr><td colspan="3" class="text-center py-4 text-gray-500">Memuat data...</td></tr>
                               </tbody>
                           </table>
                       </div>
@@ -967,17 +941,13 @@
                   </div>
               `;
 
-          // Atur tanggal default ke hari ini
           const today = new Date().toISOString().split("T")[0];
           document.getElementById("tanggal-pengeluaran").value = today;
 
-          let expensesData;
-          // Hanya ambil data jika belum ada di cache atau dipaksa refresh
-          if (forceRefresh || !cachedData.pengeluaran) {
-            expensesData = await fetchData("getExpenses", {}, true);
-            if (expensesData) cachedData.pengeluaran = expensesData;
-          } else {
-            expensesData = cachedData.pengeluaran;
+          // Ambil data dari cache frontend atau dari server jika forceFetch atau tidak ada di cache
+          let expensesData = cachedData.pengeluaran;
+          if (forceFetch || !expensesData) {
+            expensesData = await fetchData("getExpenses");
           }
 
           if (expensesData && expensesData.expenses) {
@@ -1007,7 +977,6 @@
             ).innerHTML = `<tr><td colspan="3" class="text-center py-4 text-gray-500">Tidak ada data pengeluaran.</td></tr>`;
           }
 
-          // Tangani pengiriman formulir
           document
             .getElementById("form-pengeluaran")
             .addEventListener("submit", async (e) => {
@@ -1033,17 +1002,14 @@
                 amount,
                 date,
               };
-              const result = await postData("recordExpense", payload);
+              await postData("recordExpense", payload);
 
-              if (result) {
-                document.getElementById("form-pengeluaran").reset();
-                document.getElementById("tanggal-pengeluaran").value = today; // Reset tanggal
-                // refreshCurrentTab() dipanggil oleh blok finally postData
-              }
+              document.getElementById("form-pengeluaran").reset();
+              document.getElementById("tanggal-pengeluaran").value = today;
             });
         }
 
-        async function renderPengaturan(forceRefresh = false) {
+        async function renderPengaturan(forceFetch = false) {
           const content = document.getElementById("app-content");
           content.innerHTML = `
                   <h2 class="text-xl md:text-2xl font-bold text-gray-800 mb-6 text-center">Pengaturan Aplikasi</h2>
@@ -1061,6 +1027,12 @@
                       <p id="current-tariff-display" class="text-base md:text-lg font-semibold text-gray-800 mt-4 text-center">Tarif saat ini: Rp 0</p>
                   </div>
 
+                  <div class="bg-white rounded-xl shadow-lg p-4 md:p-6 mb-6">
+                      <h3 class="text-lg md:text-xl font-bold text-gray-700 mb-4">Reset Data</h3>
+                      <button id="reset-data-btn" class="w-full bg-red-600 text-white py-2 md:py-3 px-4 rounded-lg hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition-colors duration-200 text-base md:text-lg font-semibold">Reset Data Aplikasi</button>
+                      <p class="text-xs md:text-sm text-gray-500 mt-2 text-center">Hapus semua atau sebagian data transaksi Anda.</p>
+                  </div>
+
                   <div class="bg-white rounded-xl shadow-lg p-4 md:p-6">
                       <h3 class="text-lg md:text-xl font-bold text-gray-700 mb-4">Informasi Aplikasi</h3>
                       <div class="text-gray-700 space-y-2">
@@ -1072,17 +1044,14 @@
                   </div>
               `;
 
-          let tariffData;
-          // Hanya ambil data jika belum ada di cache atau dipaksa refresh
-          if (forceRefresh || !cachedData.pengaturan) {
-            tariffData = await fetchData("getCurrentTariff", {}, true);
-            if (tariffData) cachedData.pengaturan = tariffData;
-          } else {
-            tariffData = cachedData.pengaturan;
+          // Ambil data dari cache frontend atau dari server jika forceFetch atau tidak ada di cache
+          let tariffData = cachedData.pengaturan;
+          if (forceFetch || !tariffData) {
+            tariffData = await fetchData("getCurrentTariff");
           }
 
-          if (tariffData && tariffData.tariff) {
-            currentTariff = tariffData.tariff; // Perbarui tarif global
+          if (tariffData && tariffData.tariff !== undefined) {
+            currentTariff = tariffData.tariff;
             document.getElementById("nominal-tarif").value = currentTariff;
             document.getElementById(
               "current-tariff-display"
@@ -1095,7 +1064,6 @@
             ).textContent = `Tarif saat ini: Belum diatur`;
           }
 
-          // Tangani pengiriman formulir
           document
             .getElementById("form-atur-tarif")
             .addEventListener("submit", async (e) => {
@@ -1111,23 +1079,138 @@
 
               const payload = {
                 tariff: nominalTarif,
-                date: new Date().toISOString().split("T")[0], // Tanggal hari ini
+                date: new Date().toISOString().split("T")[0],
               };
-              const result = await postData("setTariff", payload);
+              await postData("setTariff", payload);
 
-              if (result) {
-                currentTariff = nominalTarif; // Perbarui tarif global
-                document.getElementById(
-                  "current-tariff-display"
-                ).textContent = `Tarif saat ini: Rp ${currentTariff.toLocaleString(
-                  "id-ID"
-                )}`;
-                // refreshCurrentTab() dipanggil oleh blok finally postData
-              }
+              currentTariff = nominalTarif;
+              document.getElementById(
+                "current-tariff-display"
+              ).textContent = `Tarif saat ini: Rp ${currentTariff.toLocaleString(
+                "id-ID"
+              )}`;
+            });
+
+          document
+            .getElementById("reset-data-btn")
+            .addEventListener("click", () => {
+              openModal(`
+                      <h3 class="text-lg md:text-xl font-bold mb-4 text-gray-800">Pilih Opsi Reset Data</h3>
+                      <p class="text-sm md:text-base text-red-600 mb-4 font-semibold"><i class="fas fa-exclamation-triangle mr-2"></i>Perhatian: Aksi ini tidak dapat dibatalkan!</p>
+                      <form id="form-reset-data" class="space-y-4">
+                          <div>
+                              <label class="inline-flex items-center">
+                                  <input type="radio" name="reset-type" value="all" class="form-radio text-blue-600 h-4 w-4" checked>
+                                  <span class="ml-2 text-gray-700 text-sm md:text-base">Reset Semua Data (Anggota, Iuran, Pengeluaran, Tarif)</span>
+                              </label>
+                              <p class="text-xs text-gray-500 ml-6">Menghapus semua data dari aplikasi dan mengembalikan ke kondisi awal.</p>
+                          </div>
+                          <div>
+                              <label class="inline-flex items-center">
+                                  <input type="radio" name="reset-type" value="monthAgo" class="form-radio text-blue-600 h-4 w-4">
+                                  <span class="ml-2 text-gray-700 text-sm md:text-base">Reset Data Transaksi Satu Bulan Lalu</span>
+                              </label>
+                              <p class="text-xs text-gray-500 ml-6">Menghapus semua iuran dan pengeluaran yang lebih lama dari awal bulan lalu. Saldo anggota akan direset ke 0.</p>
+                          </div>
+                          <div>
+                              <label class="inline-flex items-center">
+                                  <input type="radio" name="reset-type" value="dateRange" class="form-radio text-blue-600 h-4 w-4">
+                                  <span class="ml-2 text-gray-700 text-sm md:text-base">Reset Data Transaksi Berdasarkan Rentang Tanggal</span>
+                              </label>
+                              <p class="text-xs text-gray-500 ml-6">Menghapus iuran dan pengeluaran dalam rentang tanggal yang ditentukan. Saldo anggota akan direset ke 0.</p>
+                          </div>
+
+                          <div id="date-range-inputs" class="space-y-3 p-4 border border-gray-200 rounded-lg hidden">
+                              <div>
+                                  <label for="reset-start-date" class="block text-sm font-medium text-gray-700 mb-2">Tanggal Mulai</label>
+                                  <input type="date" id="reset-start-date" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm md:text-base">
+                              </div>
+                              <div>
+                                  <label for="reset-end-date" class="block text-sm font-medium text-gray-700 mb-2">Tanggal Akhir</label>
+                                  <input type="date" id="reset-end-date" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm md:text-base">
+                              </div>
+                          </div>
+
+                          <div class="flex justify-end gap-4 mt-6">
+                              <button type="button" id="cancel-reset-data" class="bg-gray-300 text-gray-800 py-2 px-4 rounded-md hover:bg-gray-400 text-sm md:text-base">Batal</button>
+                              <button type="submit" class="bg-red-600 text-white py-2 px-4 rounded-md hover:bg-red-700 text-sm md:text-base">Konfirmasi Reset</button>
+                          </div>
+                      </form>
+                  `);
+
+              const formResetData = document.getElementById("form-reset-data");
+              const dateRangeInputs =
+                document.getElementById("date-range-inputs");
+              const radioButtons = formResetData.querySelectorAll(
+                'input[name="reset-type"]'
+              );
+              const resetStartDateEl =
+                document.getElementById("reset-start-date");
+              const resetEndDateEl = document.getElementById("reset-end-date");
+
+              resetEndDateEl.value = new Date().toISOString().split("T")[0];
+
+              radioButtons.forEach((radio) => {
+                radio.addEventListener("change", (e) => {
+                  if (e.target.value === "dateRange") {
+                    dateRangeInputs.classList.remove("hidden");
+                  } else {
+                    dateRangeInputs.classList.add("hidden");
+                  }
+                });
+              });
+
+              document
+                .getElementById("cancel-reset-data")
+                .addEventListener("click", closeModal);
+
+              formResetData.addEventListener("submit", async (e) => {
+                e.preventDefault();
+                const selectedResetType = formResetData.querySelector(
+                  'input[name="reset-type"]:checked'
+                ).value;
+                let payload = { resetType: selectedResetType };
+
+                if (selectedResetType === "dateRange") {
+                  const startDate = resetStartDateEl.value;
+                  const endDate = resetEndDateEl.value;
+                  if (!startDate || !endDate) {
+                    showMessageBox(
+                      "Harap lengkapi tanggal mulai dan akhir untuk reset rentang tanggal.",
+                      "error"
+                    );
+                    return;
+                  }
+                  payload.startDate = startDate;
+                  payload.endDate = endDate;
+                }
+
+                openModal(`
+                    <h3 class="text-lg md:text-xl font-bold mb-4 text-gray-800">Konfirmasi Reset Data</h3>
+                    <p class="mb-6 text-sm md:text-base text-red-600 font-semibold">
+                        <i class="fas fa-exclamation-triangle mr-2"></i>
+                        Anda yakin ingin melakukan reset data ini? Aksi ini tidak dapat dibatalkan!
+                    </p>
+                    <div class="flex justify-end gap-4">
+                        <button id="final-cancel-reset" class="bg-gray-300 text-gray-800 py-2 px-4 rounded-md hover:bg-gray-400 text-sm md:text-base">Batal</button>
+                        <button id="final-confirm-reset" class="bg-red-600 text-white py-2 px-4 rounded-md hover:bg-red-700 text-sm md:text-base">Ya, Reset Data</button>
+                    </div>
+                `);
+
+                document
+                  .getElementById("final-cancel-reset")
+                  .addEventListener("click", closeModal);
+                document
+                  .getElementById("final-confirm-reset")
+                  .addEventListener("click", async () => {
+                    closeModal();
+                    await postData("resetData", payload);
+                  });
+              });
             });
         }
 
-        async function renderAnggota(forceRefresh = false) {
+        async function renderAnggota(forceFetch = false) {
           const content = document.getElementById("app-content");
           content.innerHTML = `
                   <h2 class="text-xl md:text-2xl font-bold text-gray-800 mb-6 text-center">Manajemen Anggota</h2>
@@ -1151,7 +1234,7 @@
                                   </tr>
                               </thead>
                               <tbody id="anggota-table-body" class="bg-white divide-y divide-gray-200">
-                                  <!-- Data anggota akan dimuat di sini -->
+                                  <tr><td colspan="2" class="text-center py-4 text-gray-500">Memuat data...</td></tr>
                               </tbody>
                           </table>
                       </div>
@@ -1161,17 +1244,14 @@
                   </div>
               `;
 
-          let membersData;
-          // Hanya ambil data jika belum ada di cache atau dipaksa refresh
-          if (forceRefresh || !cachedData.anggota) {
-            membersData = await fetchData("getMembers", {}, true);
-            if (membersData) cachedData.anggota = membersData;
-          } else {
-            membersData = cachedData.anggota;
+          // Ambil data dari cache frontend atau dari server jika forceFetch atau tidak ada di cache
+          let membersData = cachedData.anggota;
+          if (forceFetch || !membersData) {
+            membersData = await fetchData("getMembers");
           }
 
           if (membersData && membersData.members) {
-            members = membersData.members; // Perbarui array anggota global
+            members = membersData.members || [];
           } else {
             members = [];
           }
@@ -1179,7 +1259,6 @@
             document.getElementById("anggota-table-body");
           renderMembersTable(anggotaTableBody);
 
-          // Tangani pengiriman formulir Tambah Anggota
           document
             .getElementById("form-tambah-anggota")
             .addEventListener("submit", async (e) => {
@@ -1193,15 +1272,11 @@
               }
 
               const payload = { name: newMemberName };
-              const result = await postData("addMember", payload);
+              await postData("addMember", payload);
 
-              if (result) {
-                document.getElementById("nama-anggota-baru").value = ""; // Hapus input
-                // refreshCurrentTab() dipanggil oleh blok finally postData
-              }
+              document.getElementById("nama-anggota-baru").value = "";
             });
 
-          // Fungsi untuk merender/merender ulang tabel anggota
           function renderMembersTable(tableBodyEl) {
             tableBodyEl.innerHTML = members
               .map(
@@ -1222,7 +1297,6 @@
               )
               .join("");
 
-            // Tambahkan event listener untuk edit, simpan, batal, hapus
             tableBodyEl
               .querySelectorAll(".edit-member-btn")
               .forEach((button) => {
@@ -1254,7 +1328,7 @@
                   const saveBtn = row.querySelector(".save-member-btn");
                   const cancelBtn = row.querySelector(".cancel-edit-btn");
 
-                  inputField.value = displaySpan.textContent; // Batalkan perubahan
+                  inputField.value = displaySpan.textContent;
                   displaySpan.classList.remove("hidden");
                   inputField.classList.add("hidden");
                   editBtn.classList.remove("hidden");
@@ -1278,31 +1352,26 @@
                   }
 
                   const payload = { id: memberId, name: newName };
-                  const result = await postData("updateMember", payload);
-
-                  if (result) {
-                    // refreshCurrentTab() dipanggil oleh blok finally postData
-                  }
+                  await postData("updateMember", payload);
                 });
               });
 
             tableBodyEl
               .querySelectorAll(".delete-member-btn")
               .forEach((button) => {
-                button.addEventListener("click", async (e) => {
+                button.addEventListener("click", (e) => {
                   const row = e.target.closest("tr");
                   const memberId = row.dataset.memberId;
                   const memberName = row.querySelector(
                     ".member-name-display"
                   ).textContent;
 
-                  // Modal konfirmasi kustom alih-alih alert/confirm
                   openModal(`
                               <h3 class="text-lg md:text-xl font-bold mb-4 text-gray-800">Konfirmasi Hapus</h3>
                               <p class="mb-6 text-sm md:text-base">Apakah Anda yakin ingin menghapus anggota <strong>${memberName}</strong>?</p>
                               <div class="flex justify-end gap-4">
                                   <button id="confirm-delete-cancel" class="bg-gray-300 text-gray-800 py-2 px-4 rounded-md hover:bg-gray-400 text-sm md:text-base">Batal</button>
-                                  <button id="confirm-delete-confirm" class="bg-red-600 text-white py-2 px-4 rounded-md hover:bg-red-700 text-sm md:text-base">Hapus</button>
+                                  <button id="final-confirm-delete" class="bg-red-600 text-white py-2 px-4 rounded-md hover:bg-red-700 text-sm md:text-base">Hapus</button>
                               </div>
                           `);
 
@@ -1310,15 +1379,12 @@
                     .getElementById("confirm-delete-cancel")
                     .addEventListener("click", closeModal);
                   document
-                    .getElementById("confirm-delete-confirm")
+                    .getElementById("final-confirm-delete")
                     .addEventListener("click", async () => {
                       closeModal();
-                      const payload = { id: memberId };
-                      const result = await postData("deleteMember", payload);
-
-                      if (result) {
-                        // refreshCurrentTab() dipanggil oleh blok finally postData
-                      }
+                      await postData("deleteMember", {
+                        id: memberId,
+                      });
                     });
                 });
               });
@@ -1329,10 +1395,15 @@
         const tabButtons = document.querySelectorAll(".tab-button");
         const appContent = document.getElementById("app-content");
 
+        // Fungsi utama untuk mengaktifkan tab
         function activateTab(tabId) {
+          // Simpan tab yang aktif saat ini ke localStorage
+          localStorage.setItem("lastActiveTab", tabId);
+
+          // Perbarui kelas aktif pada tombol navigasi
           tabButtons.forEach((button) => {
-            // Hapus semua kelas warna dari ikon terlebih dahulu
             const icon = button.querySelector("i");
+            // Hapus semua kelas warna ikon yang spesifik
             icon.classList.remove(
               "text-blue-600",
               "text-green-600",
@@ -1343,7 +1414,7 @@
 
             if (button.id === `nav-${tabId}`) {
               button.classList.add("active");
-              // Tambahkan warna spesifik untuk ikon tab aktif
+              // Tambahkan kelas warna spesifik untuk tab aktif
               if (tabId === "dashboard") icon.classList.add("text-blue-600");
               else if (tabId === "iuran") icon.classList.add("text-green-600");
               else if (tabId === "pengeluaran")
@@ -1351,7 +1422,7 @@
               else if (tabId === "anggota")
                 icon.classList.add("text-yellow-600");
               else if (tabId === "pengaturan")
-                icon.classList.add("text-purple-600"); // Pengaturan sekarang di posisi ke-5
+                icon.classList.add("text-purple-600");
             } else {
               button.classList.remove("active");
               // Atur ikon tab tidak aktif ke warna abu-abu default
@@ -1359,28 +1430,28 @@
             }
           });
 
-          // Hapus konten sebelum merender tab baru
+          // Bersihkan konten utama sebelum memuat konten tab baru
           appContent.innerHTML = "";
 
-          // Render konten berdasarkan tabId
+          // Render konten tab yang dipilih (tidak memaksa fetch)
           switch (tabId) {
             case "dashboard":
-              renderDashboard();
+              renderDashboard(); // Akan menggunakan cache frontend jika tersedia
               break;
             case "iuran":
-              renderIuran();
+              renderIuran(); // Akan menggunakan cache frontend jika tersedia
               break;
             case "pengeluaran":
-              renderPengeluaran();
+              renderPengeluaran(); // Akan menggunakan cache frontend jika tersedia
               break;
             case "anggota":
-              renderAnggota();
+              renderAnggota(); // Akan menggunakan cache frontend jika tersedia
               break;
-            case "pengaturan": // Urutan baru
-              renderPengaturan();
+            case "pengaturan":
+              renderPengaturan(); // Akan menggunakan cache frontend jika tersedia
               break;
             default:
-              renderDashboard(); // Default ke dashboard
+              renderDashboard();
               break;
           }
           currentActiveTab = tabId;
@@ -1401,31 +1472,24 @@
         function closeModal() {
           globalModalOverlay.classList.add("hidden");
           globalModalOverlay.classList.remove("flex");
-          globalModalBody.innerHTML = ""; // Hapus konten modal
+          globalModalBody.innerHTML = "";
         }
 
         // --- Event Listener ---
-        // Render awal dashboard
-        activateTab("dashboard");
-
-        // Tambahkan event listener ke tombol refresh
         document
           .getElementById("refresh-button")
-          .addEventListener("click", refreshCurrentTab);
+          .addEventListener("click", () => refreshCurrentTab(true)); // Memaksa refresh
 
-        // Tambahkan event listener ke tombol navigasi
         tabButtons.forEach((button) => {
           button.addEventListener("click", () => {
             const tabId = button.id.replace("nav-", "");
-            activateTab(tabId);
+            activateTab(tabId); // Tidak memaksa refresh, akan pakai cache frontend
           });
         });
 
-        // Tutup tombol modal
         document
           .getElementById("global-modal-close")
           .addEventListener("click", closeModal);
-        // Tutup modal saat mengklik di luar konten
         document
           .getElementById("global-modal-overlay")
           .addEventListener("click", (e) => {
@@ -1434,36 +1498,23 @@
             }
           });
 
-        // Pengambilan data latar belakang untuk tab lain setelah dashboard dirender
-        // Pengambilan ini tidak boleh menampilkan spinner
-        // PENTING: Hanya ambil data dashboard dan anggota di awal
-        setTimeout(async () => {
-          console.log(
-            "Memulai pengambilan data awal untuk Dashboard dan Anggota..."
-          );
-          const dashboardData = await fetchData(
-            "getDashboardSummary",
-            {},
-            false
-          );
-          if (dashboardData) {
-            cachedData.dashboard = dashboardData;
-            unpaidDebts = dashboardData.unpaidDebts || [];
-            memberBalances = dashboardData.memberBalances || [];
-            currentTariff = dashboardData.currentTariff || 0;
-          }
+        console.log("Memulai pengambilan data awal untuk inisialisasi...");
+        // Mengambil data awal yang paling penting untuk mengisi variabel global
+        // Ini akan mengisi cache di server jika belum ada, dan juga di frontend.
+        const initialMembersData = await fetchData("getMembers");
+        if (initialMembersData) {
+          members = initialMembersData.members || [];
+          currentTariff = initialMembersData.currentTariff || 0;
+        }
+        // Ambil juga data dashboard awal untuk mengisi cache frontend dashboard
+        await fetchData("getDashboardSummary");
 
-          const membersData = await fetchData("getMembers", {}, false);
-          if (membersData) {
-            cachedData.iuran = membersData; // Data anggota juga digunakan oleh tab iuran
-            cachedData.anggota = membersData;
-            members = membersData.members;
-            currentTariff = membersData.currentTariff;
-          }
-          console.log("Pengambilan data awal selesai.");
-          refreshCurrentTab(); // Pastikan dashboard dirender ulang dengan data awal yang sudah di-cache
-        }, 100); // Penundaan kecil untuk memungkinkan rendering dashboard awal dimulai
-      }); // Akhir dari DOMContentLoaded
+        console.log("Pengambilan data awal selesai. Mengaktifkan tab.");
+
+        // Setelah data awal diambil, aktifkan tab yang terakhir aktif
+        activateTab(currentActiveTab);
+        toggleActionLoadingOverlay(false);
+      });
     </script>
   </body>
 </html>
