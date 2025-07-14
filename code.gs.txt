@@ -472,10 +472,35 @@ function getTariffOnly() {
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   const sheet = ss.getSheetByName('Tarif');
   const lastRow = sheet.getLastRow();
-  const tariffHeaders = sheet.getDataRange().getValues().length > 0 ? sheet.getDataRange().getValues()[0] : [];
-  const TARIF_MAIN_COL = tariffHeaders.indexOf('Tarif_Main');
+  Logger.log(`[getTariffOnly] Last row: ${lastRow}`);
 
-  return lastRow > 1 ? Number(sheet.getRange(lastRow, TARIF_MAIN_COL + 1).getValue()) : 0;
+  // Pastikan ada setidaknya satu baris data selain header
+  if (lastRow <= 1) {
+    Logger.log("[getTariffOnly] Sheet 'Tarif' kosong atau hanya berisi header. Mengembalikan 0.");
+    return 0;
+  }
+
+  const tariffHeaders = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  const TARIF_MAIN_COL = tariffHeaders.indexOf('Tarif_Main');
+  Logger.log(`[getTariffOnly] Tarif_Main column index (0-based): ${TARIF_MAIN_COL}`);
+
+  if (TARIF_MAIN_COL === -1) {
+    Logger.log("[getTariffOnly] Kolom 'Tarif_Main' tidak ditemukan di sheet 'Tarif'. Mengembalikan 0.");
+    return 0;
+  }
+
+  const tariffValue = sheet.getRange(lastRow, TARIF_MAIN_COL + 1).getValue();
+  Logger.log(`[getTariffOnly] Raw tariff value from sheet: ${tariffValue}`);
+
+  // Mengonversi nilai ke angka, menangani kasus string atau kosong
+  const parsedTariff = Number(tariffValue);
+  
+  if (isNaN(parsedTariff)) {
+    Logger.log(`[getTariffOnly] Peringatan: Nilai tarif tidak dapat diurai sebagai angka (${tariffValue}). Mengembalikan 0.`);
+    return 0;
+  }
+  Logger.log(`[getTariffOnly] Parsed tariff: ${parsedTariff}`);
+  return parsedTariff;
 }
 
 function getCurrentTariff() {
@@ -505,6 +530,15 @@ function _clearAndSetupSheetsInternal() {
     sheet.clearContents(); // Membersihkan semua data termasuk header
     sheet.getRange(1, 1, 1, sheetInfo.headers.length).setValues([sheetInfo.headers]);
     sheet.getRange(1, 1, 1, sheetInfo.headers.length).setFontWeight('bold');
+
+    // Tambahkan nilai default untuk sheet 'Tarif' jika baru dibuat/direset
+    if (sheetInfo.name === 'Tarif') {
+      // Periksa apakah ada baris data selain header
+      if (sheet.getLastRow() === 1) { // Hanya header yang ada
+        sheet.appendRow([0, new Date().toISOString().split('T')[0]]); // Tambahkan tarif 0 dengan tanggal hari ini
+        Logger.log("Tarif default 0 ditambahkan ke sheet 'Tarif'.");
+      }
+    }
   });
 
   const anggotaSheet = ss.getSheetByName('Anggota');
