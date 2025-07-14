@@ -547,15 +547,22 @@
           const content = document.getElementById("tab-content-wrapper"); // Target pembungkus konten
           // Tampilkan kerangka UI segera dengan indikator loading
           content.innerHTML = `
-                  <!-- Tombol Setor Saldo & Setor Kas (Minimalis dengan Ikon) -->
-                  <div class="mb-6 flex flex-wrap justify-center gap-4">
-                      <button id="setor-saldo-anggota-btn" class="flex flex-col items-center justify-center bg-teal-600 text-white p-3 rounded-lg hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2 transition-colors duration-200 text-sm md:text-base font-medium min-w-[120px]">
-                          <i class="fas fa-user-plus text-xl mb-1"></i>
-                          <span class="text-xs">Setor Saldo Anggota</span>
+                  <!-- Tombol Setor Saldo & Setor Kas sebagai kartu -->
+                  <div class="grid grid-cols-2 gap-6 mb-8">
+                      <!-- Tombol Setor Saldo Anggota sebagai kartu -->
+                      <button id="setor-saldo-anggota-btn" class="bg-white rounded-xl shadow-lg p-3 md:p-6 flex flex-col items-center justify-center text-center cursor-pointer hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
+                          <div class="p-3 rounded-full bg-teal-100 text-teal-600 mb-4">
+                              <i class="fas fa-user-plus text-2xl"></i>
+                          </div>
+                          <span class="text-sm font-medium text-gray-700">Setor Saldo Anggota</span>
                       </button>
-                      <button id="setor-kas-klub-btn" class="flex flex-col items-center justify-center bg-teal-600 text-white p-3 rounded-lg hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2 transition-colors duration-200 text-sm md:text-base font-medium min-w-[120px]">
-                          <i class="fas fa-hand-holding-usd text-xl mb-1"></i>
-                          <span class="text-xs">Setor Kas Klub</span>
+
+                      <!-- Tombol Setor Kas Klub sebagai kartu -->
+                      <button id="setor-kas-klub-btn" class="bg-white rounded-xl shadow-lg p-3 md:p-6 flex flex-col items-center justify-center text-center cursor-pointer hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
+                          <div class="p-3 rounded-full bg-teal-100 text-teal-600 mb-4">
+                              <i class="fas fa-hand-holding-usd text-2xl"></i>
+                          </div>
+                          <span class="text-sm font-medium text-gray-700">Setor Kas Klub</span>
                       </button>
                   </div>
 
@@ -1466,12 +1473,6 @@
                     } else if (transaction.type === "Setoran Saldo") {
                       keteranganText = "Setoran Saldo";
                       keteranganClass = "text-purple-600"; // Warna ungu untuk setoran murni
-                    } else if (transaction.type === "Iuran") {
-                      keteranganText = transaction.statusIuran; // Tetap pakai statusIuran untuk tipe 'Iuran'
-                      keteranganClass =
-                        transaction.statusIuran === "Lunas"
-                          ? "text-green-600"
-                          : "text-red-600";
                     } else {
                       keteranganText = transaction.type || "N/A"; // Fallback jika ada tipe baru atau kosong
                       keteranganClass = "text-gray-600";
