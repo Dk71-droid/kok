@@ -8,6 +8,7 @@ const APP_DATA_CELLS = {
   MEMBERS_AND_IURAN: 'A2', // Digunakan untuk tab Anggota dan data dropdown Iuran
   EXPENSES: 'A3',
   SETTINGS: 'A4' // Untuk tarif
+  // IURAN_TRANSACTIONS: 'A5' // Dihapus: Tidak lagi menyimpan cache transaksi iuran secara otomatis
 };
 
 // ===== HELPER FUNCTIONS FOR APP DATA CACHE HANDLING =====
@@ -78,6 +79,7 @@ function doGet(e) {
       case 'getDashboardSummary': result = getDashboardSummary(); break;
       case 'getExpenses': result = getExpenses(); break;
       case 'getCurrentTariff': result = getCurrentTariff(); break;
+      case 'getIuranTransactions': result = getIuranTransactions(); break; // Dipertahankan untuk fetch on-demand
       default:
         throw new Error('Aksi tidak dikenal: ' + action);
     }
@@ -238,21 +240,22 @@ function recordPaymentInternal(payload) {
   const timestamp = new Date();
 
   // Memperbarui saldo Anggota
-  // Jika statusBayar adalah 'sudah_bayar', saldo anggota bertambah (utang berkurang/saldo positif bertambah)
+  // Jika statusBayar adalah 'sudah_bayar', saldo anggota TIDAK BERUBAH karena diasumsikan pembayaran langsung (cash/transfer)
   // Jika statusBayar adalah 'belum_bayar', saldo anggota berkurang (utang bertambah)
-  const newMemberBalance = payload.statusBayar === "sudah_bayar"
-    ? currentMemberBalance + nominalIuran
-    : currentMemberBalance - nominalIuran;
+  let newMemberBalance = currentMemberBalance; // Default: saldo tidak berubah
+  if (payload.statusBayar === "belum_bayar") {
+    newMemberBalance = currentMemberBalance - nominalIuran;
+  }
   sheetAnggota.getRange(memberRowIndex, SALDO_COL_ANGGOTA + 1).setValue(newMemberBalance);
 
-  // HANYA tambahkan ke Kas Klub jika paymentMethod adalah 'cash'
-  if (payload.paymentMethod === 'cash') {
+  // HANYA tambahkan ke Kas Klub jika statusBayar adalah 'sudah_bayar'
+  if (payload.statusBayar === 'sudah_bayar') {
     const kasKlubRowIndex = anggotaData.findIndex(row => row[ID_ANGGOTA_COL_ANGGOTA] === CASH_FUND_MEMBER_ID) + 1;
     if (kasKlubRowIndex > 0) {
       const currentKasKlubBalance = parseFloat(sheetAnggota.getRange(kasKlubRowIndex, SALDO_COL_ANGGOTA + 1).getValue()) || 0;
       sheetAnggota.getRange(kasKlubRowIndex, SALDO_COL_ANGGOTA + 1).setValue(currentKasKlubBalance + nominalIuran);
     } else {
-      Logger.log(`Warning: Anggota dengan ID ${CASH_FUND_MEMBER_ID} tidak ditemukan. Dana kas tidak diperbarui untuk pembayaran 'cash'.`);
+      Logger.log(`Warning: Anggota dengan ID ${CASH_FUND_MEMBER_ID} tidak ditemukan. Dana kas tidak diperbarui untuk pembayaran 'sudah_bayar'.`);
     }
   }
 
@@ -263,9 +266,11 @@ function recordPaymentInternal(payload) {
     payload.jumlahMain, // Jumlah main
     nominalIuran, // Nominal
     payload.statusBayar === "sudah_bayar" ? "Lunas" : "Belum Lunas", // Status Iuran
-    payload.paymentMethod, // Metode Pembayaran
+    payload.paymentMethod, // Metode Pembayaran (ini akan selalu 'none' atau 'cash' dari frontend, tapi di sini bisa diabaikan jika statusBayar sudah jelas)
     timestamp // Timestamp
   ]);
+  
+  // Dihapus: getIuranTransactions(); // Tidak lagi memperbarui cache transaksi iuran secara otomatis
 }
 
 
@@ -308,34 +313,10 @@ function recordBatchPayments(data) {
 
     data.payments.forEach(payment => {
       try {
-        // Sebelum memanggil recordPaymentInternal, tentukan paymentMethod
-        // berdasarkan saldo anggota saat ini. Ini penting karena saldo bisa berubah
-        // selama pemrosesan batch jika ada pembayaran lain yang mempengaruhi saldo.
-        const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-        const anggotaSheet = ss.getSheetByName('Anggota');
-        const anggotaData = anggotaSheet.getDataRange().getValues();
-        const anggotaHeaders = anggotaData.length > 0 ? anggotaData[0] : [];
-        const ID_COL_ANGGOTA = anggotaHeaders.indexOf('ID');
-        const SALDO_COL_ANGGOTA = anggotaHeaders.indexOf('Saldo');
-
-        let currentMemberBalance = 0;
-        for (let i = 1; i < anggotaData.length; i++) {
-          if (anggotaData[i][ID_COL_ANGGOTA] === payment.memberId) {
-            currentMemberBalance = parseFloat(anggotaData[i][SALDO_COL_ANGGOTA]) || 0;
-            break;
-          }
-        }
-
-        const nominal = payment.jumlahMain * payment.tariff;
-        let determinedPaymentMethod = "none";
-
-        if (payment.statusBayar === "sudah_bayar") {
-          if (currentMemberBalance >= nominal) {
-            determinedPaymentMethod = "balance";
-          } else {
-            determinedPaymentMethod = "cash";
-          }
-        }
+        // Untuk pembayaran batch, paymentMethod selalu dianggap 'cash'
+        // jika statusBayar adalah 'sudah_bayar' karena tidak ada mekanisme
+        // pengecekan saldo perorangan di sini. Saldo perorangan hanya berubah
+        // jika statusBayar 'belum_bayar' (menjadi utang).
         
         recordPaymentInternal({
           memberId: payment.memberId,
@@ -343,7 +324,7 @@ function recordBatchPayments(data) {
           statusBayar: payment.statusBayar,
           tariff: payment.tariff,
           date: payment.date,
-          paymentMethod: determinedPaymentMethod // Gunakan metode pembayaran yang ditentukan
+          paymentMethod: payment.statusBayar === "sudah_bayar" ? "cash" : "none" // Disini paymentMethod disesuaikan
         });
         successCount++;
       } catch (e) {
@@ -357,6 +338,7 @@ function recordBatchPayments(data) {
     getDashboardSummary();
     getExpenses();
     getCurrentTariff();
+    // Dihapus: getIuranTransactions(); // Tidak lagi memperbarui cache transaksi iuran secara otomatis
 
     return { 
       success: true, 
@@ -370,6 +352,39 @@ function recordBatchPayments(data) {
   } finally {
     lock.releaseLock();
   }
+}
+
+/**
+ * Mengambil semua transaksi iuran dari sheet 'Iuran'.
+ * Data ini tidak di-cache secara otomatis, hanya diambil saat diminta.
+ * @returns {object} Objek berisi array transaksi iuran.
+ */
+function getIuranTransactions() {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sheet = ss.getSheetByName('Iuran');
+  if (!sheet) throw new Error("Sheet 'Iuran' tidak ditemukan.");
+
+  const data = sheet.getDataRange().getValues();
+  const transactions = [];
+
+  // Asumsi baris pertama adalah header: Tanggal, Nama_Anggota, Jumlah_Main, Nominal, Status_Iuran, Metode_Pembayaran, Timestamp
+  if (data.length > 1) {
+    for (let i = 1; i < data.length; i++) {
+      transactions.push({
+        date: data[i][0],
+        memberName: data[i][1],
+        jumlahMain: parseFloat(data[i][2]) || 0,
+        nominal: parseFloat(data[i][3]) || 0,
+        statusIuran: data[i][4],
+        metodePembayaran: data[i][5],
+        timestamp: data[i][6] // Opsional, bisa digunakan untuk sorting
+      });
+    }
+  }
+  // Mengurutkan transaksi dari yang terbaru ke terlama berdasarkan timestamp
+  transactions.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+
+  return { transactions: transactions };
 }
 
 

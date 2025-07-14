@@ -325,8 +325,11 @@
           pengeluaran: null,
           pengaturan: null, // Untuk tarif
           anggota: null, // Alias untuk members (jika diperlukan pemisahan)
-          iuranTransactions: null, // BARU: Cache untuk transaksi iuran
+          iuranTransactions: null, // Cache untuk transaksi iuran
         };
+
+        // ID khusus untuk saldo kas klub (harus sama dengan di Code.gs)
+        const CASH_FUND_MEMBER_ID = "kas_klub";
 
         // --- Fungsi Utilitas ---
 
@@ -410,7 +413,6 @@
             } else if (action === "getCurrentTariff") {
               cachedData.pengaturan = result;
             } else if (action === "getIuranTransactions") {
-              // BARU: Simpan cache transaksi iuran
               cachedData.iuranTransactions = result;
             }
             return result;
@@ -479,7 +481,7 @@
               case "recordBatchPayments": // Tambahkan aksi pembayaran batch
                 cachedData.iuran = null; // Pembayaran mempengaruhi status iuran
                 cachedData.dashboard = null; // Pembayaran mempengaruhi total dashboard
-                cachedData.iuranTransactions = null; // BARU: Invalidasi cache transaksi iuran
+                cachedData.iuranTransactions = null; // Invalidasi cache transaksi iuran
                 break;
               case "recordExpense":
                 cachedData.pengeluaran = null;
@@ -497,16 +499,17 @@
                 cachedData.pengeluaran = null;
                 cachedData.pengaturan = null;
                 cachedData.anggota = null;
-                cachedData.iuranTransactions = null; // BARU: Invalidasi cache transaksi iuran
+                cachedData.iuranTransactions = null; // Invalidasi cache transaksi iuran
                 break;
             }
             // Tampilkan pesan dan sembunyikan spinner hanya jika tidak ditekan
+            if (success) {
+              showMessageBox(message, "success");
+            } else if (errorOccurred) {
+              showMessageBox(message, "error");
+            }
             if (!suppressSpinner) {
-              if (success) {
-                showMessageBox(message, "success");
-              } else if (errorOccurred) {
-                showMessageBox(message, "error");
-              }
+              // Only hide if this function showed it
               toggleRefreshSpinner(false);
             }
           }
@@ -544,6 +547,18 @@
           const content = document.getElementById("tab-content-wrapper"); // Target pembungkus konten
           // Tampilkan kerangka UI segera dengan indikator loading
           content.innerHTML = `
+                  <!-- Tombol Setor Saldo & Setor Kas (Minimalis dengan Ikon) -->
+                  <div class="mb-6 flex flex-wrap justify-center gap-4">
+                      <button id="setor-saldo-anggota-btn" class="flex flex-col items-center justify-center bg-teal-600 text-white p-3 rounded-lg hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2 transition-colors duration-200 text-sm md:text-base font-medium min-w-[120px]">
+                          <i class="fas fa-user-plus text-xl mb-1"></i>
+                          <span class="text-xs">Setor Saldo Anggota</span>
+                      </button>
+                      <button id="setor-kas-klub-btn" class="flex flex-col items-center justify-center bg-teal-600 text-white p-3 rounded-lg hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2 transition-colors duration-200 text-sm md:text-base font-medium min-w-[120px]">
+                          <i class="fas fa-hand-holding-usd text-xl mb-1"></i>
+                          <span class="text-xs">Setor Kas Klub</span>
+                      </button>
+                  </div>
+
                   <!-- Kartu Ringkasan -->
                   <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
                       <!-- Kartu Jumlah Belum Bayar -->
@@ -788,6 +803,173 @@
               cardBelumBayar.addEventListener("click", newListener);
               cardBelumBayar._eventListener = newListener;
             }
+
+            // Event listener untuk tombol Setor Saldo Anggota di Dashboard
+            const setorSaldoAnggotaBtn = document.getElementById(
+              "setor-saldo-anggota-btn"
+            );
+            if (setorSaldoAnggotaBtn) {
+              const oldSetorSaldoListener = setorSaldoAnggotaBtn._eventListener;
+              if (oldSetorSaldoListener) {
+                setorSaldoAnggotaBtn.removeEventListener(
+                  "click",
+                  oldSetorSaldoListener
+                );
+              }
+
+              const newSetorSaldoListener = () => {
+                openModal(`
+                        <h3 class="text-base md:text-lg font-semibold mb-4 text-gray-800">Setor Saldo Anggota</h3>
+                        <form id="form-setor-saldo-dashboard" class="space-y-4 md:space-y-5">
+                            <div>
+                                <label for="member-select-setor-dashboard" class="block text-sm font-medium text-gray-700 mb-2">Nama Anggota</label>
+                                <select id="member-select-setor-dashboard" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-teal-500 focus:border-teal-500 text-sm md:text-base">
+                                    <option value="">Pilih Anggota</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label for="nominal-setor-dashboard" class="block text-sm font-medium text-gray-700 mb-2">Nominal Setor (Rp)</label>
+                                <input type="number" id="nominal-setor-dashboard" min="1" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-teal-500 focus:border-teal-500 text-sm md:text-base" placeholder="Contoh: 50000">
+                            </div>
+                            <div class="flex justify-end gap-4">
+                                <button type="button" id="cancel-setor-saldo-dashboard" class="bg-gray-300 text-gray-800 py-2 px-4 rounded-md hover:bg-gray-400 text-sm md:text-base">Batal</button>
+                                <button type="submit" class="bg-teal-600 text-white py-2 px-4 rounded-md hover:bg-teal-700 text-sm md:text-base">Setor Saldo</button>
+                            </div>
+                        </form>
+                    `);
+
+                const memberSelectSetorDashboard = document.getElementById(
+                  "member-select-setor-dashboard"
+                );
+                // Populate member dropdown for deposit modal
+                members.forEach((member) => {
+                  // Exclude 'Kas Klub' from deposit options
+                  if (member.id !== CASH_FUND_MEMBER_ID) {
+                    const option = document.createElement("option");
+                    option.value = member.id;
+                    option.textContent = member.name;
+                    memberSelectSetorDashboard.appendChild(option);
+                  }
+                });
+
+                document
+                  .getElementById("cancel-setor-saldo-dashboard")
+                  .addEventListener("click", closeModal);
+                document
+                  .getElementById("form-setor-saldo-dashboard")
+                  .addEventListener("submit", async (e) => {
+                    e.preventDefault();
+                    const memberId = document.getElementById(
+                      "member-select-setor-dashboard"
+                    ).value;
+                    const nominalSetor = parseInt(
+                      document.getElementById("nominal-setor-dashboard").value
+                    );
+
+                    if (!memberId || isNaN(nominalSetor) || nominalSetor <= 0) {
+                      showMessageBox(
+                        "Harap lengkapi semua bidang dengan benar.",
+                        "error"
+                      );
+                      return;
+                    }
+
+                    closeModal();
+                    const payload = {
+                      memberId,
+                      amount: nominalSetor,
+                    };
+                    const postResult = await postData(
+                      "depositBalance",
+                      payload
+                    );
+
+                    if (postResult.success) {
+                      showMessageBox("Saldo berhasil disetor!", "success");
+                      await refreshCurrentTab(true, false); // Paksa refresh dashboard
+                      // No need to refresh iuran transactions here, as depositBalance already invalidates its cache.
+                    } else {
+                      showMessageBox(
+                        `Gagal menyetor saldo: ${postResult.message}`,
+                        "error"
+                      );
+                    }
+                  });
+              };
+              setorSaldoAnggotaBtn.addEventListener(
+                "click",
+                newSetorSaldoListener
+              );
+              setorSaldoAnggotaBtn._eventListener = newSetorSaldoListener;
+            }
+
+            // Event listener untuk tombol Setor Kas Klub di Dashboard
+            const setorKasKlubBtn =
+              document.getElementById("setor-kas-klub-btn");
+            if (setorKasKlubBtn) {
+              const oldSetorKasListener = setorKasKlubBtn._eventListener;
+              if (oldSetorKasListener) {
+                setorKasKlubBtn.removeEventListener(
+                  "click",
+                  oldSetorKasListener
+                );
+              }
+
+              const newSetorKasListener = () => {
+                openModal(`
+                        <h3 class="text-base md:text-lg font-semibold mb-4 text-gray-800">Setor Kas Klub</h3>
+                        <form id="form-setor-kas-klub" class="space-y-4 md:space-y-5">
+                            <div>
+                                <label for="nominal-setor-kas" class="block text-sm font-medium text-gray-700 mb-2">Nominal Setor (Rp)</label>
+                                <input type="number" id="nominal-setor-kas" min="1" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-teal-500 focus:border-teal-500 text-sm md:text-base" placeholder="Contoh: 100000">
+                            </div>
+                            <div class="flex justify-end gap-4">
+                                <button type="button" id="cancel-setor-kas" class="bg-gray-300 text-gray-800 py-2 px-4 rounded-md hover:bg-gray-400 text-sm md:text-base">Batal</button>
+                                <button type="submit" class="bg-teal-600 text-white py-2 px-4 rounded-md hover:bg-teal-700 text-sm md:text-base">Setor Kas</button>
+                            </div>
+                        </form>
+                    `);
+
+                document
+                  .getElementById("cancel-setor-kas")
+                  .addEventListener("click", closeModal);
+                document
+                  .getElementById("form-setor-kas-klub")
+                  .addEventListener("submit", async (e) => {
+                    e.preventDefault();
+                    const nominalSetor = parseInt(
+                      document.getElementById("nominal-setor-kas").value
+                    );
+
+                    if (isNaN(nominalSetor) || nominalSetor <= 0) {
+                      showMessageBox("Nominal setoran tidak valid.", "error");
+                      return;
+                    }
+
+                    closeModal();
+                    const payload = {
+                      memberId: CASH_FUND_MEMBER_ID, // Menggunakan ID khusus untuk kas klub
+                      amount: nominalSetor,
+                    };
+                    const postResult = await postData(
+                      "depositBalance",
+                      payload
+                    );
+
+                    if (postResult.success) {
+                      showMessageBox("Kas Klub berhasil disetor!", "success");
+                      await refreshCurrentTab(true, false); // Paksa refresh dashboard
+                    } else {
+                      showMessageBox(
+                        `Gagal menyetor kas klub: ${postResult.message}`,
+                        "error"
+                      );
+                    }
+                  });
+              };
+              setorKasKlubBtn.addEventListener("click", newSetorKasListener);
+              setorKasKlubBtn._eventListener = newSetorKasListener;
+            }
           }
         }
 
@@ -798,7 +980,7 @@
                       <div class="grid grid-cols-3 gap-2 border-b border-gray-200 mb-6">
                           <button id="tab-individu" class="iuran-tab-button flex-1 py-3 text-center text-gray-600 font-medium border-b-2 border-transparent hover:border-gray-300 transition-colors duration-300 text-sm md:text-base">Perorang</button>
                           <button id="tab-kolektif" class="iuran-tab-button flex-1 py-3 text-center text-gray-600 font-medium border-b-2 border-transparent hover:border-gray-300 transition-colors duration-300 text-sm md:text-base">Kolektif</button>
-                          <button id="tab-setor-saldo" class="iuran-tab-button flex-1 py-3 text-center text-gray-600 font-medium border-b-2 border-transparent hover:border-gray-300 transition-colors duration-300 text-sm md:text-base">Setor Saldo</button>
+                          <button id="tab-transaksi" class="iuran-tab-button flex-1 py-3 text-center text-gray-600 font-medium border-b-2 border-transparent hover:border-gray-300 transition-colors duration-300 text-sm md:text-base">Transaksi</button>
                       </div>
 
                       <!-- Konten Tab Bayar Iuran Individu -->
@@ -864,44 +1046,26 @@
                           </form>
                       </div>
 
-                      <!-- Konten Tab Setor Saldo Kas -->
-                      <div id="content-setor-saldo" class="hidden">
-                          <form id="form-setor-saldo" class="space-y-4 md:space-y-5">
-                              <div>
-                                  <label for="member-select-setor" class="block text-sm font-medium text-gray-700 mb-2">Nama Anggota</label>
-                                  <select id="member-select-setor" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-teal-500 focus:border-teal-500 text-sm md:text-base">
-                                      <option value="">Pilih Anggota</option>
-                                  </select>
-                              </div>
-                              <div>
-                                  <label for="nominal-setor" class="block text-sm font-medium text-gray-700 mb-2">Nominal Setor (Rp)</label>
-                                  <input type="number" id="nominal-setor" min="1" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-teal-500 focus:border-teal-500 text-sm md:text-base" placeholder="Contoh: 50000">
-                              </div>
-                              <button type="submit" class="w-full bg-teal-600 text-white py-2 md:py-3 px-4 rounded-lg hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2 transition-colors duration-200 text-base md:text-lg font-medium">Setor Saldo</button>
-                          </form>
-                      </div>
-                  </div>
-
-                  <!-- Bagian Riwayat Transaksi Iuran -->
-                  <div class="bg-white rounded-xl shadow-lg p-4 md:p-6">
-                      <h3 class="text-sm font-medium text-gray-800 mb-4">Riwayat Transaksi Iuran</h3>
-                      <button id="lihat-transaksi-iuran-btn" class="w-full bg-blue-500 text-white py-2 px-4 rounded-lg hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2 transition-colors duration-200 text-base font-medium mb-4">Lihat Transaksi</button>
-                      <div id="iuran-transactions-container" class="overflow-x-auto rounded-lg border border-gray-200 shadow-sm hidden">
-                          <table class="min-w-full divide-y divide-gray-200">
-                              <thead class="bg-gray-100">
-                                  <tr>
-                                      <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider rounded-tl-lg">Tanggal & Anggota</th>
-                                      <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Detail Iuran</th>
-                                      <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider rounded-tr-lg">Status</th>
-                                  </tr>
-                              </thead>
-                              <tbody id="iuran-transactions-table-body" class="bg-white divide-y divide-gray-200">
-                                  <tr><td colspan="3" class="text-center py-2 text-xs md:text-sm text-teal-500">Klik 'Lihat Transaksi' untuk memuat data.</td></tr>
-                              </tbody>
-                          </table>
-                      </div>
-                      <div class="mt-4 text-xs md:text-sm text-gray-600 text-center">
-                          <p>Riwayat semua pembayaran iuran.</p>
+                      <!-- Konten Tab Transaksi Iuran -->
+                      <div id="content-transaksi" class="hidden">
+                          <h3 class="text-sm font-medium text-gray-800 mb-4">Riwayat Transaksi Iuran</h3>
+                          <div id="iuran-transactions-container" class="overflow-x-auto rounded-lg border border-gray-200 shadow-sm">
+                              <table class="min-w-full divide-y divide-gray-200">
+                                  <thead class="bg-gray-100">
+                                      <tr>
+                                          <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider rounded-tl-lg">Tanggal & Anggota</th>
+                                          <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Detail Iuran</th>
+                                          <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider rounded-tr-lg">Keterangan</th>
+                                      </tr>
+                                  </thead>
+                                  <tbody id="iuran-transactions-table-body" class="bg-white divide-y divide-gray-200">
+                                      <tr><td colspan="3" class="text-center py-2 text-xs md:text-sm text-teal-500">Memuat data transaksi...</td></tr>
+                                  </tbody>
+                              </table>
+                          </div>
+                          <div class="mt-4 text-xs md:text-sm text-gray-600 text-center">
+                              <p>Riwayat semua pembayaran iuran.</p>
+                          </div>
                       </div>
                   </div>
               `;
@@ -931,16 +1095,11 @@
           const memberSelectIndividu = document.getElementById(
             "member-select-individu"
           );
-          const memberSelectSetor = document.getElementById(
-            "member-select-setor"
-          );
           const kolektifTableBody = document.getElementById(
             "kolektif-table-body"
           );
 
           memberSelectIndividu.innerHTML =
-            '<option value="">Pilih Anggota</option>';
-          memberSelectSetor.innerHTML =
             '<option value="">Pilih Anggota</option>';
           kolektifTableBody.innerHTML = ""; // Bersihkan dulu
 
@@ -951,14 +1110,9 @@
             option1.textContent = member.name;
             memberSelectIndividu.appendChild(option1);
 
-            // Untuk tab setor saldo
-            const option2 = document.createElement("option");
-            option2.value = member.id;
-            option2.textContent = member.name;
-            memberSelectSetor.appendChild(option2);
-
             // Untuk tab kolektif (kecuali Kas Klub)
-            if (member.id !== "kas_klub") {
+            if (member.id !== CASH_FUND_MEMBER_ID) {
+              // Use CASH_FUND_MEMBER_ID
               const row = document.createElement("tr");
               row.dataset.memberId = member.id;
               row.dataset.memberName = member.name; // Simpan nama untuk referensi
@@ -1085,11 +1239,8 @@
             tanggalIuranEl.value = today;
             updateNominalAndSaldo();
             // Setelah pembayaran, pastikan riwayat transaksi di-refresh jika sudah dibuka
-            if (
-              !document
-                .getElementById("iuran-transactions-container")
-                .classList.contains("hidden")
-            ) {
+            // No longer checking for hidden, always refresh if this tab is active
+            if (currentActiveIuranTab === "transaksi") {
               await fetchAndRenderIuranTransactions(true, false);
             }
           });
@@ -1182,11 +1333,7 @@
 
               await refreshCurrentTab(true, false); // Paksa refresh dashboard dan iuran
               // Setelah pembayaran, pastikan riwayat transaksi di-refresh jika sudah dibuka
-              if (
-                !document
-                  .getElementById("iuran-transactions-container")
-                  .classList.contains("hidden")
-              ) {
+              if (currentActiveIuranTab === "transaksi") {
                 await fetchAndRenderIuranTransactions(true, false);
               }
             } else {
@@ -1206,76 +1353,45 @@
             }
           });
 
-          const formSetorSaldo = document.getElementById("form-setor-saldo");
-          formSetorSaldo.addEventListener("submit", async (e) => {
-            e.preventDefault();
-            const memberId = document.getElementById(
-              "member-select-setor"
-            ).value;
-            const nominalSetor = parseInt(
-              document.getElementById("nominal-setor").value
-            );
-
-            if (!memberId || isNaN(nominalSetor) || nominalSetor <= 0) {
-              showMessageBox(
-                "Harap lengkapi semua bidang dengan benar.",
-                "error"
-              );
-              return;
-            }
-
-            const payload = {
-              memberId,
-              amount: nominalSetor,
-            };
-            await postData("depositBalance", payload);
-
-            formSetorSaldo.reset();
-            // Setelah setoran, pastikan riwayat transaksi di-refresh jika sudah dibuka
-            if (
-              !document
-                .getElementById("iuran-transactions-container")
-                .classList.contains("hidden")
-            ) {
-              await fetchAndRenderIuranTransactions(true, false);
-            }
-          });
+          // Removed formSetorSaldo logic from here as it's moved to Dashboard
 
           const tabIndividu = document.getElementById("tab-individu");
-          const tabKolektif = document.getElementById("tab-kolektif"); // New tab button
-          const tabSetorSaldo = document.getElementById("tab-setor-saldo");
+          const tabKolektif = document.getElementById("tab-kolektif");
+          const tabTransaksi = document.getElementById("tab-transaksi"); // New tab button
           const contentIndividu = document.getElementById("content-individu");
-          const contentKolektif = document.getElementById("content-kolektif"); // New tab content
-          const contentSetorSaldo = document.getElementById(
-            "content-setor-saldo"
-          );
+          const contentKolektif = document.getElementById("content-kolektif");
+          const contentTransaksi = document.getElementById("content-transaksi"); // New tab content
 
-          const switchIuranTab = (activeTabId) => {
+          let currentActiveIuranTab = "individu"; // Default sub-tab Iuran
+
+          const switchIuranTab = async (activeTabId) => {
             // Hapus semua kelas aktif dari semua tombol dan konten
-            tabIndividu.classList.remove("active");
-            tabKolektif.classList.remove("active");
-            tabSetorSaldo.classList.remove("active");
-            tabIndividu.classList.remove("border-teal-600");
-            tabKolektif.classList.remove("border-teal-600");
-            tabSetorSaldo.classList.remove("border-teal-600");
+            tabIndividu.classList.remove("active", "border-teal-600");
+            tabKolektif.classList.remove("active", "border-teal-600");
+            tabTransaksi.classList.remove("active", "border-teal-600"); // New tab
             tabIndividu.classList.add("border-transparent");
             tabKolektif.classList.add("border-transparent");
-            tabSetorSaldo.classList.add("border-transparent");
+            tabTransaksi.classList.add("border-transparent"); // New tab
 
             contentIndividu.classList.add("hidden");
             contentKolektif.classList.add("hidden");
-            contentSetorSaldo.classList.add("hidden");
+            contentTransaksi.classList.add("hidden"); // New tab
 
             // Atur kelas aktif untuk tab yang dipilih
             if (activeTabId === "tab-individu") {
               tabIndividu.classList.add("active", "border-teal-600");
               contentIndividu.classList.remove("hidden");
+              currentActiveIuranTab = "individu";
             } else if (activeTabId === "tab-kolektif") {
               tabKolektif.classList.add("active", "border-teal-600");
               contentKolektif.classList.remove("hidden");
-            } else if (activeTabId === "tab-setor-saldo") {
-              tabSetorSaldo.classList.add("active", "border-teal-600");
-              contentSetorSaldo.classList.remove("hidden");
+              currentActiveIuranTab = "kolektif";
+            } else if (activeTabId === "tab-transaksi") {
+              // New tab logic
+              tabTransaksi.classList.add("active", "border-teal-600");
+              contentTransaksi.classList.remove("hidden");
+              currentActiveIuranTab = "transaksi";
+              await fetchAndRenderIuranTransactions(false, true); // Fetch on tab switch if not already cached
             }
           };
 
@@ -1284,32 +1400,26 @@
           );
           tabKolektif.addEventListener("click", () =>
             switchIuranTab("tab-kolektif")
-          ); // New listener
-          tabSetorSaldo.addEventListener("click", () =>
-            switchIuranTab("tab-setor-saldo")
+          );
+          tabTransaksi.addEventListener("click", () =>
+            // New listener
+            switchIuranTab("tab-transaksi")
           );
 
           // Default ke tab individu saat pertama kali render Iuran
           switchIuranTab("tab-individu");
-
-          // BARU: Logika untuk tombol Lihat Transaksi Iuran
-          const lihatTransaksiBtn = document.getElementById(
-            "lihat-transaksi-iuran-btn"
-          );
-          const iuranTransactionsContainer = document.getElementById(
-            "iuran-transactions-container"
-          );
-          const iuranTransactionsTableBody = document.getElementById(
-            "iuran-transactions-table-body"
-          );
 
           // Fungsi untuk mengambil dan merender transaksi iuran
           async function fetchAndRenderIuranTransactions(
             forceFetch = false,
             showSpinner = true
           ) {
+            const iuranTransactionsTableBody = document.getElementById(
+              "iuran-transactions-table-body"
+            );
+            if (!iuranTransactionsTableBody) return; // Ensure element exists
+
             iuranTransactionsTableBody.innerHTML = `<tr><td colspan="3" class="text-center py-2 text-xs md:text-sm text-teal-500">Memuat data transaksi...</td></tr>`;
-            iuranTransactionsContainer.classList.remove("hidden"); // Tampilkan container saat memuat
 
             let iuranTransactionsData = cachedData.iuranTransactions;
             if (forceFetch || !iuranTransactionsData) {
@@ -1338,6 +1448,35 @@
                       "0"
                     )}-${dateObj.getFullYear()}`;
 
+                    let keteranganText = "";
+                    let keteranganClass = ""; // Untuk warna teks
+
+                    // Menentukan teks keterangan dan kelas berdasarkan tipe transaksi
+                    if (transaction.type === "Pelunasan Utang") {
+                      keteranganText = "Pelunasan Utang";
+                      keteranganClass = "text-green-600";
+                    } else if (transaction.type === "Bayar Utang") {
+                      keteranganText = "Bayar Utang";
+                      keteranganClass = "text-orange-600"; // Warna oranye untuk pembayaran sebagian
+                    } else if (
+                      transaction.type === "Pelunasan dan Tambah Saldo"
+                    ) {
+                      keteranganText = "Pelunasan dan Tambah Saldo";
+                      keteranganClass = "text-blue-600"; // Warna biru untuk lunas + saldo lebih
+                    } else if (transaction.type === "Setoran Saldo") {
+                      keteranganText = "Setoran Saldo";
+                      keteranganClass = "text-purple-600"; // Warna ungu untuk setoran murni
+                    } else if (transaction.type === "Iuran") {
+                      keteranganText = transaction.statusIuran; // Tetap pakai statusIuran untuk tipe 'Iuran'
+                      keteranganClass =
+                        transaction.statusIuran === "Lunas"
+                          ? "text-green-600"
+                          : "text-red-600";
+                    } else {
+                      keteranganText = transaction.type || "N/A"; // Fallback jika ada tipe baru atau kosong
+                      keteranganClass = "text-gray-600";
+                    }
+
                     return `
                               <tr>
                                   <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-900">
@@ -1354,11 +1493,7 @@
                                         "id-ID"
                                       )}</div>
                                   </td>
-                                  <td class="px-4 py-2 whitespace-nowrap text-sm ${
-                                    transaction.statusIuran === "Lunas"
-                                      ? "text-green-600"
-                                      : "text-red-600"
-                                  }">${transaction.statusIuran}</td>
+                                  <td class="px-4 py-2 whitespace-nowrap text-sm ${keteranganClass}">${keteranganText}</td>
                               </tr>
                           `;
                   })
@@ -1367,11 +1502,7 @@
               iuranTransactionsTableBody.innerHTML = `<tr><td colspan="3" class="text-center py-2 text-xs md:text-sm text-gray-500">Tidak ada riwayat transaksi iuran.</td></tr>`;
             }
           }
-
-          // Event listener untuk tombol "Lihat Transaksi"
-          lihatTransaksiBtn.addEventListener("click", () =>
-            fetchAndRenderIuranTransactions(true, true)
-          ); // Force fetch dan tampilkan spinner
+          // No longer using a "Lihat Transaksi" button, fetching happens on tab switch
         }
 
         async function renderPengeluaran(
@@ -1788,7 +1919,7 @@
                     await fetchData("getMembers", {}, false);
                     await fetchData("getExpenses", {}, false);
                     await fetchData("getCurrentTariff", {}, false);
-                    // BARU: Invalidasi cache transaksi iuran setelah reset
+                    // Invalidasi cache transaksi iuran setelah reset
                     cachedData.iuranTransactions = null;
                     activateTab("dashboard"); // Kembali ke dashboard setelah reset
                     showMessageBox("Data berhasil direset!", "success");
@@ -2389,14 +2520,19 @@
 
         console.log("Memulai pengambilan data awal untuk semua tab...");
         // Mengambil semua data awal secara paralel
-        // PERBAIKAN: Memastikan urutan variabel sesuai dengan urutan pemanggilan fetchData
-        const [dashboardResult, membersResult, tariffResult, expensesResult] =
-          await Promise.all([
-            fetchData("getDashboardSummary"),
-            fetchData("getMembers"),
-            fetchData("getCurrentTariff"), // Ini adalah hasil ke-3
-            fetchData("getExpenses"), // Ini adalah hasil ke-4
-          ]);
+        const [
+          dashboardResult,
+          membersResult,
+          tariffResult,
+          expensesResult,
+          iuranTransactionsResult,
+        ] = await Promise.all([
+          fetchData("getDashboardSummary"),
+          fetchData("getMembers"),
+          fetchData("getCurrentTariff"),
+          fetchData("getExpenses"),
+          fetchData("getIuranTransactions"), // Fetch iuran transactions on initial load
+        ]);
 
         // Menyimpan hasil fetch ke cachedData
         if (dashboardResult) {
@@ -2406,16 +2542,17 @@
           cachedData.iuran = membersResult;
           cachedData.anggota = membersResult;
           members = membersResult.members || []; // Perbarui array members global
-          // currentTariff = membersResult.currentTariff || 0; // Hapus baris ini, tarif diambil dari tariffResult
         }
-        // PERBAIKAN: Pastikan cachedData.pengeluaran diisi dengan expensesResult yang benar
         if (expensesResult) {
           cachedData.pengeluaran = expensesResult;
         }
-        // PERBAIKAN: Pastikan cachedData.pengaturan diisi dengan tariffResult yang benar
         if (tariffResult) {
           cachedData.pengaturan = tariffResult;
           currentTariff = tariffResult.tariff || 0; // Pastikan tarif global diperbarui dari tariffResult
+        }
+        if (iuranTransactionsResult) {
+          // Store iuran transactions
+          cachedData.iuranTransactions = iuranTransactionsResult;
         }
 
         console.log("Pengambilan data awal semua tab selesai.");
