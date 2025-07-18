@@ -344,7 +344,7 @@
       let currentTariff = 0;
       let transactions = [];
       let expenses = [];
-      let userId = null; // ID pengguna saat ini
+      let userId = null; // ID pengguna saat ini (akan tetap digunakan untuk inisialisasi, tetapi data akan publik)
       let isAuthReady = false; // Flag untuk menunjukkan apakah status autentikasi sudah siap
 
       // Ambil tab terakhir yang aktif dari localStorage, default ke "dashboard"
@@ -436,7 +436,6 @@
       // Fungsi untuk menyiapkan listener Firestore
       const setupFirestoreListeners = () => {
         if (
-          !userId ||
           !membersColRef ||
           !transactionsColRef ||
           !expensesColRef ||
@@ -554,7 +553,7 @@
       // Listener utama untuk status autentikasi Firebase
       onAuthStateChanged(auth, async (user) => {
         if (user) {
-          userId = user.uid;
+          userId = user.uid; // Simpan userId, meskipun data akan publik
           console.log("Authenticated with userId:", userId);
         } else {
           try {
@@ -570,21 +569,22 @@
 
         // Inisialisasi referensi koleksi SETELAH userId diatur
         const currentAppId = firebaseConfig.appId; // Ambil appId dari config
+        // Mengubah jalur koleksi ke jalur publik
         membersColRef = collection(
           db,
-          `artifacts/${currentAppId}/users/${userId}/members`
+          `artifacts/${currentAppId}/public/data/members`
         );
         transactionsColRef = collection(
           db,
-          `artifacts/${currentAppId}/users/${userId}/transactions`
+          `artifacts/${currentAppId}/public/data/transactions`
         );
         expensesColRef = collection(
           db,
-          `artifacts/${currentAppId}/users/${userId}/expenses`
+          `artifacts/${currentAppId}/public/data/expenses`
         );
         settingsDocRef = doc(
           db,
-          `artifacts/${currentAppId}/users/${userId}/settings/tariff`
+          `artifacts/${currentAppId}/public/data/settings/tariff`
         );
 
         await setupKasKlub(); // Pastikan Kas Klub ada sebelum menyiapkan listener
@@ -600,10 +600,7 @@
        * Jika tidak ada, akan dibuat dengan saldo 0.
        */
       async function setupKasKlub() {
-        if (!userId) {
-          console.warn("ID Pengguna tidak tersedia untuk penyiapan Kas Klub.");
-          return;
-        }
+        // Tidak perlu memeriksa userId di sini karena data sudah publik
         const kasKlubDocRef = doc(membersColRef, CASH_FUND_MEMBER_ID);
         try {
           const docSnap = await getDoc(kasKlubDocRef);
